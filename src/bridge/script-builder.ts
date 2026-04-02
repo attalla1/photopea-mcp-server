@@ -27,7 +27,6 @@ import type {
   ReplaceSmartObjectParams,
   ExportImageParams,
   GetPreviewParams,
-  BatchExportParams,
   SetBackgroundParams,
   CreateBannerParams,
   LoadTemplateParams,
@@ -52,7 +51,7 @@ export function hexToRgb(hex: string): { r: number; g: number; b: number } {
 
 /** Escape a string for safe embedding inside single-quoted JS literals. */
 export function escapeString(str: string): string {
-  return str.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\n/g, "\\n");
+  return str.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
 }
 
 // ---------------------------------------------------------------------------
@@ -142,21 +141,13 @@ export function buildCreateDocument(params: CreateDocumentParams): string {
 
   if (fillColor) {
     const { r, g, b } = hexToRgb(fillColor);
-    lines.push(solidColorLines("_fillColor", r, g, b));
     lines.push(
-      `var _doc = app.documents.add(${width}, ${height}, ${resolution}, '${safeName}', NewDocumentMode.GRAYSCALE, DocumentFill.WHITE);`
+      `var _doc = app.documents.add(${width}, ${height}, ${resolution}, '${safeName}', ${modeEnum}, DocumentFill.WHITE);`
     );
-    // Re-use the color mode after creation (Photopea supports mode on add for most cases,
-    // but we also set background color explicitly so the fill is visible).
-    lines.push(`app.documents.add(${width}, ${height}, ${resolution}, '${safeName}', ${modeEnum}, DocumentFill.BACKGROUNDCOLOR);`);
-    // Actually, emit the canonical single-call form that tests check for, then fill background.
-    // Reset and do it properly:
-    lines.length = 0;
     lines.push(solidColorLines("_fillColor", r, g, b));
-    lines.push(`app.foregroundColor = _fillColor;`);
-    lines.push(
-      `var _doc = app.documents.add(${width}, ${height}, ${resolution}, '${safeName}', ${modeEnum}, DocumentFill.BACKGROUNDCOLOR);`
-    );
+    lines.push(`_doc.selection.selectAll();`);
+    lines.push(`_doc.selection.fill(_fillColor);`);
+    lines.push(`_doc.selection.deselect();`);
   } else {
     lines.push(
       `var _doc = app.documents.add(${width}, ${height}, ${resolution}, '${safeName}', ${modeEnum}, DocumentFill.WHITE);`
@@ -183,10 +174,9 @@ app.echoToOE(JSON.stringify(_info));
 }
 
 export function buildResizeDocument(params: ResizeDocumentParams): string {
-  const { width, height, resampleMethod } = params;
-  const resample = resampleMethod ?? "ResampleMethod.BICUBIC";
+  const { width, height } = params;
   return [
-    `app.activeDocument.resizeImage(${width}, ${height}, null, ${resample});`,
+    `app.activeDocument.resizeImage(${width}, ${height}, null, ResampleMethod.BICUBIC);`,
     `app.echoToOE('ok');`,
   ].join("\n");
 }
@@ -230,7 +220,6 @@ export function buildAddFillLayer(params: AddFillLayerParams): string {
     if (name !== undefined) {
       lines.push(`_layer.name = '${escapeString(name)}';`);
     }
-    lines.push(`_layer.kind = LayerKind.SOLIDFILL;`);
     lines.push(`app.activeDocument.selection.selectAll();`);
     lines.push(`app.activeDocument.selection.fill(_fillColor);`);
     lines.push(`app.activeDocument.selection.deselect();`);
@@ -240,8 +229,34 @@ export function buildAddFillLayer(params: AddFillLayerParams): string {
     if (name !== undefined) {
       lines.push(`_layer.name = '${escapeString(name)}';`);
     }
-    // Basic gradient fill via scripting
-    lines.push(`// gradient: colors=[${colors.join(",")}] angle=${angle}`);
+    lines.push(`app.activeDocument.activeLayer = _layer;`);
+    lines.push(`app.activeDocument.selection.selectAll();`);
+    lines.push(`var _gfGradDesc = new ActionDescriptor();`);
+    lines.push(`var _gfGradObj = new ActionDescriptor();`);
+    lines.push(`var _gfColorStops = new ActionList();`);
+    const stopCount = colors.length;
+    for (let i = 0; i < stopCount; i++) {
+      const { r, g, b } = hexToRgb(colors[i]);
+      const location = Math.round((i / Math.max(stopCount - 1, 1)) * 4096);
+      lines.push(`var _gfStop${i} = new ActionDescriptor();`);
+      lines.push(`var _gfStopColor${i} = new ActionDescriptor();`);
+      lines.push(`_gfStopColor${i}.putDouble(charIDToTypeID('Rd  '), ${r});`);
+      lines.push(`_gfStopColor${i}.putDouble(charIDToTypeID('Grn '), ${g});`);
+      lines.push(`_gfStopColor${i}.putDouble(charIDToTypeID('Bl  '), ${b});`);
+      lines.push(`_gfStop${i}.putObject(charIDToTypeID('Clr '), charIDToTypeID('RGBC'), _gfStopColor${i});`);
+      lines.push(`_gfStop${i}.putInteger(charIDToTypeID('Lctn'), ${location});`);
+      lines.push(`_gfStop${i}.putInteger(charIDToTypeID('Mdpn'), 50);`);
+      lines.push(`_gfColorStops.putObject(charIDToTypeID('Clrs'), _gfStop${i});`);
+    }
+    lines.push(`_gfGradObj.putList(charIDToTypeID('Clrs'), _gfColorStops);`);
+    lines.push(`_gfGradDesc.putObject(charIDToTypeID('Grad'), charIDToTypeID('Grdn'), _gfGradObj);`);
+    lines.push(`_gfGradDesc.putEnumerated(charIDToTypeID('Type'), charIDToTypeID('GrdT'), charIDToTypeID('Lnr '));`);
+    lines.push(`_gfGradDesc.putUnitDouble(charIDToTypeID('Angl'), charIDToTypeID('#Ang'), ${angle});`);
+    lines.push(`_gfGradDesc.putUnitDouble(charIDToTypeID('Scl '), charIDToTypeID('#Prc'), 100);`);
+    lines.push(`var _gfFillDesc = new ActionDescriptor();`);
+    lines.push(`_gfFillDesc.putObject(charIDToTypeID('T   '), charIDToTypeID('GrFl'), _gfGradDesc);`);
+    lines.push(`executeAction(charIDToTypeID('Fl  '), _gfFillDesc, DialogModes.NO);`);
+    lines.push(`app.activeDocument.selection.deselect();`);
   } else {
     lines.push(`var _layer = app.activeDocument.artLayers.add();`);
     if (name !== undefined) {
@@ -421,6 +436,7 @@ export function buildAddText(params: AddTextParams): string {
     italic,
     letterSpacing,
     lineHeight,
+    paragraphBounds,
   } = params;
 
   const lines: string[] = [];
@@ -455,6 +471,11 @@ export function buildAddText(params: AddTextParams): string {
   }
   if (lineHeight !== undefined) {
     lines.push(`_ti.leading = ${lineHeight};`);
+  }
+  if (paragraphBounds) {
+    lines.push(`_ti.kind = TextType.PARAGRAPHTEXT;`);
+    lines.push(`_ti.width = ${paragraphBounds.width};`);
+    lines.push(`_ti.height = ${paragraphBounds.height};`);
   }
 
   lines.push(`app.echoToOE('ok');`);
@@ -547,20 +568,22 @@ export function buildAddShape(params: AddShapeParams): string {
 // ---------------------------------------------------------------------------
 
 export function buildPlaceImage(params: PlaceImageParams): string {
-  const { source, x, y, width, height, name } = params;
   const lines: string[] = [];
-
-  lines.push(`var _placed = app.open('${escapeString(source)}', null, true);`);
-  if (name !== undefined) {
-    lines.push(`_placed.name = '${escapeString(name)}';`);
+  lines.push(`app.open('${escapeString(params.source)}', null, true);`);
+  lines.push(`var _placedLayer = app.activeDocument.activeLayer;`);
+  if (params.name) {
+    lines.push(`_placedLayer.name = '${escapeString(params.name)}';`);
   }
-  if (width !== undefined && height !== undefined) {
-    lines.push(`_placed.resizeImage(${width}, ${height});`);
+  if (params.width && params.height) {
+    lines.push(`var _pb = _placedLayer.bounds;`);
+    lines.push(`var _pw = _pb[2].as('px') - _pb[0].as('px');`);
+    lines.push(`var _ph = _pb[3].as('px') - _pb[1].as('px');`);
+    lines.push(`_placedLayer.resize(${params.width} / _pw * 100, ${params.height} / _ph * 100);`);
   }
-  if (x !== undefined && y !== undefined) {
-    lines.push(`_placed.translate(${x}, ${y});`);
+  if (params.x !== undefined && params.y !== undefined) {
+    lines.push(`var _pb2 = _placedLayer.bounds;`);
+    lines.push(`_placedLayer.translate(${params.x} - _pb2[0].as('px'), ${params.y} - _pb2[1].as('px'));`);
   }
-
   lines.push(`app.echoToOE('ok');`);
   return lines.join("\n");
 }
@@ -596,7 +619,9 @@ export function buildApplyAdjustment(params: ApplyAdjustmentParams): string {
       break;
     }
     case "curves": {
-      const curvePoints = (settings.points as string) ?? "[[0,0],[255,255]]";
+      const curvePoints = typeof settings.points === "string" && /^[\[\]0-9,.\s-]+$/.test(settings.points)
+        ? settings.points
+        : "[[0,0],[255,255]]";
       lines.push(`${layer}.adjustCurves(${curvePoints});`);
       break;
     }
@@ -681,7 +706,7 @@ export function buildTransformLayer(params: TransformLayerParams): string {
 // ---------------------------------------------------------------------------
 
 export function buildApplyLayerStyle(params: ApplyLayerStyleParams): string {
-  const { target, dropShadow, stroke, outerGlow } = params;
+  const { target, dropShadow, stroke, outerGlow, innerGlow, colorOverlay, gradientOverlay } = params;
   const ref = layerRef(target);
   const lines: string[] = [];
 
@@ -766,6 +791,72 @@ export function buildApplyLayerStyle(params: ApplyLayerStyleParams): string {
     lines.push(`var _ogLayerDesc = new ActionDescriptor();`);
     lines.push(`_ogLayerDesc.putObject(charIDToTypeID('T   '), charIDToTypeID('Lyr '), _ogFxDesc);`);
     lines.push(`executeAction(charIDToTypeID('setd'), _ogLayerDesc, DialogModes.NO);`);
+  }
+
+  if (innerGlow !== undefined) {
+    const { color: glowColor = "#ffffff", opacity = 75, size = 10 } = innerGlow;
+    const { r, g, b } = hexToRgb(glowColor);
+    lines.push(`var _igDesc = new ActionDescriptor();`);
+    lines.push(`var _igColor = new ActionDescriptor();`);
+    lines.push(`_igColor.putDouble(charIDToTypeID('Rd  '), ${r});`);
+    lines.push(`_igColor.putDouble(charIDToTypeID('Grn '), ${g});`);
+    lines.push(`_igColor.putDouble(charIDToTypeID('Bl  '), ${b});`);
+    lines.push(`_igDesc.putObject(charIDToTypeID('Clr '), charIDToTypeID('RGBC'), _igColor);`);
+    lines.push(`_igDesc.putUnitDouble(charIDToTypeID('Opct'), charIDToTypeID('#Prc'), ${opacity});`);
+    lines.push(`_igDesc.putUnitDouble(charIDToTypeID('blur'), charIDToTypeID('#Pxl'), ${size});`);
+    lines.push(`var _igFxDesc = new ActionDescriptor();`);
+    lines.push(`_igFxDesc.putObject(charIDToTypeID('IrGl'), charIDToTypeID('IrGl'), _igDesc);`);
+    lines.push(`var _igLayerDesc = new ActionDescriptor();`);
+    lines.push(`_igLayerDesc.putObject(charIDToTypeID('T   '), charIDToTypeID('Lyr '), _igFxDesc);`);
+    lines.push(`executeAction(charIDToTypeID('setd'), _igLayerDesc, DialogModes.NO);`);
+  }
+
+  if (colorOverlay !== undefined) {
+    const { color: overlayColor, opacity = 100 } = colorOverlay;
+    const { r, g, b } = hexToRgb(overlayColor);
+    lines.push(`var _coDesc = new ActionDescriptor();`);
+    lines.push(`var _coColor = new ActionDescriptor();`);
+    lines.push(`_coColor.putDouble(charIDToTypeID('Rd  '), ${r});`);
+    lines.push(`_coColor.putDouble(charIDToTypeID('Grn '), ${g});`);
+    lines.push(`_coColor.putDouble(charIDToTypeID('Bl  '), ${b});`);
+    lines.push(`_coDesc.putObject(charIDToTypeID('Clr '), charIDToTypeID('RGBC'), _coColor);`);
+    lines.push(`_coDesc.putUnitDouble(charIDToTypeID('Opct'), charIDToTypeID('#Prc'), ${opacity});`);
+    lines.push(`var _coFxDesc = new ActionDescriptor();`);
+    lines.push(`_coFxDesc.putObject(charIDToTypeID('SoFi'), charIDToTypeID('SoFi'), _coDesc);`);
+    lines.push(`var _coLayerDesc = new ActionDescriptor();`);
+    lines.push(`_coLayerDesc.putObject(charIDToTypeID('T   '), charIDToTypeID('Lyr '), _coFxDesc);`);
+    lines.push(`executeAction(charIDToTypeID('setd'), _coLayerDesc, DialogModes.NO);`);
+  }
+
+  if (gradientOverlay !== undefined) {
+    const { colors, angle = 0, opacity = 100 } = gradientOverlay;
+    lines.push(`var _goGradDesc = new ActionDescriptor();`);
+    lines.push(`var _goGradObj = new ActionDescriptor();`);
+    lines.push(`var _goColorStops = new ActionList();`);
+    const stopCount = colors.length;
+    for (let i = 0; i < stopCount; i++) {
+      const { r, g, b } = hexToRgb(colors[i]);
+      const location = Math.round((i / Math.max(stopCount - 1, 1)) * 4096);
+      lines.push(`var _goStop${i} = new ActionDescriptor();`);
+      lines.push(`var _goStopColor${i} = new ActionDescriptor();`);
+      lines.push(`_goStopColor${i}.putDouble(charIDToTypeID('Rd  '), ${r});`);
+      lines.push(`_goStopColor${i}.putDouble(charIDToTypeID('Grn '), ${g});`);
+      lines.push(`_goStopColor${i}.putDouble(charIDToTypeID('Bl  '), ${b});`);
+      lines.push(`_goStop${i}.putObject(charIDToTypeID('Clr '), charIDToTypeID('RGBC'), _goStopColor${i});`);
+      lines.push(`_goStop${i}.putInteger(charIDToTypeID('Lctn'), ${location});`);
+      lines.push(`_goStop${i}.putInteger(charIDToTypeID('Mdpn'), 50);`);
+      lines.push(`_goColorStops.putObject(charIDToTypeID('Clrs'), _goStop${i});`);
+    }
+    lines.push(`_goGradObj.putList(charIDToTypeID('Clrs'), _goColorStops);`);
+    lines.push(`_goGradDesc.putObject(charIDToTypeID('Grad'), charIDToTypeID('Grdn'), _goGradObj);`);
+    lines.push(`_goGradDesc.putEnumerated(charIDToTypeID('Type'), charIDToTypeID('GrdT'), charIDToTypeID('Lnr '));`);
+    lines.push(`_goGradDesc.putUnitDouble(charIDToTypeID('Angl'), charIDToTypeID('#Ang'), ${angle});`);
+    lines.push(`_goGradDesc.putUnitDouble(charIDToTypeID('Opct'), charIDToTypeID('#Prc'), ${opacity});`);
+    lines.push(`var _goFxDesc = new ActionDescriptor();`);
+    lines.push(`_goFxDesc.putObject(charIDToTypeID('GrFl'), charIDToTypeID('GrFl'), _goGradDesc);`);
+    lines.push(`var _goLayerDesc = new ActionDescriptor();`);
+    lines.push(`_goLayerDesc.putObject(charIDToTypeID('T   '), charIDToTypeID('Lyr '), _goFxDesc);`);
+    lines.push(`executeAction(charIDToTypeID('setd'), _goLayerDesc, DialogModes.NO);`);
   }
 
   lines.push(`app.echoToOE('ok');`);
@@ -897,7 +988,7 @@ export function buildFillSelection(params: FillSelectionParams): string {
       `app.activeDocument.selection.fill(_selColor, ${blendModeRef(blendMode)}, ${opacity});`
     );
   } else {
-    lines.push(`app.activeDocument.selection.fill(_selColor);`);
+    lines.push(`app.activeDocument.selection.fill(_selColor, ColorBlendMode.NORMAL, ${opacity});`);
   }
 
   lines.push(`app.echoToOE('ok');`);
@@ -964,41 +1055,6 @@ export function buildGetPreview(params: GetPreviewParams): string {
   return lines.join("\n");
 }
 
-export function buildBatchExport(params: BatchExportParams): string {
-  const { exports } = params;
-  const lines: string[] = [];
-
-  for (let i = 0; i < exports.length; i++) {
-    const entry = exports[i];
-    const { format, quality, width, height } = entry;
-
-    let formatStr: string;
-    if (format === "jpg" && quality !== undefined) {
-      formatStr = `jpg:${quality}`;
-    } else {
-      formatStr = format;
-    }
-
-    if (width !== undefined || height !== undefined) {
-      const docVar = `_batchDoc${i}`;
-      lines.push(`var ${docVar} = app.activeDocument.duplicate();`);
-      if (width !== undefined && height !== undefined) {
-        lines.push(`${docVar}.resizeImage(${width}, ${height});`);
-      } else if (width !== undefined) {
-        lines.push(`${docVar}.resizeImage(${width}, null);`);
-      } else {
-        lines.push(`${docVar}.resizeImage(null, ${height});`);
-      }
-      lines.push(`${docVar}.saveToOE('${formatStr}');`);
-      lines.push(`${docVar}.close(SaveOptions.DONOTSAVECHANGES);`);
-    } else {
-      lines.push(`app.activeDocument.saveToOE('${formatStr}');`);
-    }
-  }
-
-  return lines.join("\n");
-}
-
 // ---------------------------------------------------------------------------
 // Utility operations
 // ---------------------------------------------------------------------------
@@ -1007,13 +1063,12 @@ export function buildRunScript(script: string): string {
   return script;
 }
 
-export function buildUndo(steps: number): string {
+export function buildUndo(steps: number = 1): string {
   const lines: string[] = [];
-  for (let i = 0; i < steps; i++) {
-    lines.push(
-      `app.activeDocument.activeHistoryState = app.activeDocument.historyStates[app.activeDocument.historyStates.length - 2];`
-    );
-  }
+  lines.push(`var _hs = app.activeDocument.historyStates;`);
+  lines.push(`var _target = Math.max(0, _hs.length - 1 - ${steps});`);
+  lines.push(`app.activeDocument.activeHistoryState = _hs[_target];`);
+  lines.push(`app.echoToOE('ok');`);
   return lines.join("\n");
 }
 
@@ -1071,10 +1126,12 @@ export function buildSetBackground(params: SetBackgroundParams): string {
     lines.push(`_bgFillDesc.putObject(charIDToTypeID('T   '), charIDToTypeID('GrFl'), _gradDesc);`);
     lines.push(`executeAction(charIDToTypeID('Fl  '), _bgFillDesc, DialogModes.NO);`);
   } else if (type === "image" && imageSource !== undefined) {
-    lines.push(`var _bgImg = app.open('${escapeString(imageSource)}', null, true);`);
+    lines.push(`app.open('${escapeString(imageSource)}', null, true);`);
     if (blur !== undefined && blur > 0) {
-      lines.push(`_bgImg.applyGaussianBlur(${blur});`);
+      lines.push(`app.activeDocument.activeLayer.applyGaussianBlur(${blur});`);
     }
+    lines.push(`app.activeDocument.activeLayer.name = 'Background';`);
+    lines.push(`app.activeDocument.activeLayer.move(app.activeDocument, ElementPlacement.PLACEATEND);`);
   }
 
   lines.push(`app.echoToOE('ok');`);

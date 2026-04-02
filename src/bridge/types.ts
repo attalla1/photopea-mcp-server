@@ -95,8 +95,6 @@ export interface CreateDocumentParams {
 export interface ResizeDocumentParams {
   width: number;
   height: number;
-  resampleMethod?: string;
-  anchor?: string;
 }
 
 export interface LayerTarget {

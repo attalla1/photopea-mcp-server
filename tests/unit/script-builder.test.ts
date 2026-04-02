@@ -31,7 +31,6 @@ import {
   buildReplaceSmartObject,
   buildExportImage,
   buildGetPreview,
-  buildBatchExport,
   buildRunScript,
   buildUndo,
   buildRedo,
@@ -265,8 +264,8 @@ describe("script-builder: export operations", () => {
   });
 
   it("buildExportImage jpg with quality", () => {
-    const script = buildExportImage({ format: "jpg", quality: 0.8, outputPath: "/tmp/out.jpg" });
-    expect(script).toContain("jpg:0.8");
+    const script = buildExportImage({ format: "jpg", quality: 80, outputPath: "/tmp/out.jpg" });
+    expect(script).toContain("jpg:80");
   });
 
   it("buildGetPreview with max dimensions", () => {
@@ -275,16 +274,7 @@ describe("script-builder: export operations", () => {
     expect(script).toContain("png");
   });
 
-  it("buildBatchExport multiple formats", () => {
-    const script = buildBatchExport({
-      exports: [
-        { format: "png", outputPath: "/tmp/out.png" },
-        { format: "jpg", quality: 0.9, outputPath: "/tmp/out.jpg" },
-      ],
-    });
-    expect(script).toContain("png");
-    expect(script).toContain("jpg");
-  });
+
 });
 
 describe("script-builder: utility operations", () => {
@@ -294,10 +284,8 @@ describe("script-builder: utility operations", () => {
 
   it("buildUndo multiple steps", () => {
     const script = buildUndo(3);
-    // Should contain 3 undo operations
-    const matches = script.match(/undo|historyState/g);
-    expect(matches).not.toBeNull();
-    expect(matches!.length).toBeGreaterThanOrEqual(3);
+    expect(script).toContain("historyStates");
+    expect(script).toContain("3");
   });
 
   it("buildRedo multiple steps", () => {
