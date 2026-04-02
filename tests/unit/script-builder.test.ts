@@ -15,6 +15,20 @@ import {
   buildGroupLayers,
   buildGetLayers,
   hexToRgb,
+  buildAddText,
+  buildEditText,
+  buildAddShape,
+  buildPlaceImage,
+  buildApplyAdjustment,
+  buildApplyFilter,
+  buildTransformLayer,
+  buildApplyLayerStyle,
+  buildAddGradient,
+  buildMakeSelection,
+  buildModifySelection,
+  buildFillSelection,
+  buildClearSelection,
+  buildReplaceSmartObject,
 } from "../../src/bridge/script-builder.js";
 
 describe("hexToRgb", () => {
@@ -134,5 +148,100 @@ describe("script-builder: layer operations", () => {
     const script = buildGetLayers();
     expect(script).toContain("app.echoToOE");
     expect(script).toContain("JSON.stringify");
+  });
+});
+
+describe("script-builder: text operations", () => {
+  it("buildAddText with all properties", () => {
+    const script = buildAddText({ content: "Hello World", x: 100, y: 200, font: "Arial", size: 48, color: "#ffffff", alignment: "center", bold: true });
+    expect(script).toContain("LayerKind.TEXT");
+    expect(script).toContain("Hello World");
+    expect(script).toContain("Arial");
+    expect(script).toContain("48");
+    expect(script).toContain("Justification.CENTER");
+  });
+
+  it("buildEditText modifies existing layer", () => {
+    const script = buildEditText({ target: "Title", content: "New Title", size: 72 });
+    expect(script).toContain("Title");
+    expect(script).toContain("New Title");
+    expect(script).toContain("72");
+  });
+});
+
+describe("script-builder: shape operations", () => {
+  it("buildAddShape rectangle", () => {
+    const script = buildAddShape({ type: "rectangle", bounds: { x: 10, y: 10, width: 200, height: 100 }, fillColor: "#3366ff", name: "Button" });
+    expect(script).toContain("Button");
+    expect(script).toContain("SolidColor");
+    expect(script).toContain("fill");
+  });
+});
+
+describe("script-builder: image operations", () => {
+  it("buildPlaceImage from URL", () => {
+    const script = buildPlaceImage({ source: "https://example.com/photo.jpg", name: "Photo" });
+    expect(script).toContain("app.open");
+    expect(script).toContain("https://example.com/photo.jpg");
+  });
+
+  it("buildApplyFilter gaussian blur", () => {
+    const script = buildApplyFilter({ type: "gaussian_blur", settings: { radius: 5 } });
+    expect(script).toContain("applyGaussianBlur");
+    expect(script).toContain("5");
+  });
+
+  it("buildTransformLayer scale and rotate", () => {
+    const script = buildTransformLayer({ target: "Photo", scaleX: 1.5, scaleY: 1.5, rotation: 45 });
+    expect(script).toContain("resize");
+    expect(script).toContain("rotate");
+    expect(script).toContain("45");
+  });
+});
+
+describe("script-builder: style operations", () => {
+  it("buildApplyLayerStyle with drop shadow", () => {
+    const script = buildApplyLayerStyle({ target: "Title", dropShadow: { color: "#000000", opacity: 75, distance: 5, size: 10 } });
+    expect(script).toContain("Title");
+    expect(script).toContain("DrSh");
+  });
+
+  it("buildAddGradient linear", () => {
+    const script = buildAddGradient({ target: "BG", type: "linear", colors: ["#1a1a2e", "#16213e"], angle: 90 });
+    expect(script).toContain("BG");
+    expect(script).toContain("Grad");
+  });
+});
+
+describe("script-builder: selection operations", () => {
+  it("buildMakeSelection all", () => {
+    expect(buildMakeSelection({ type: "all" })).toContain("selectAll");
+  });
+
+  it("buildMakeSelection rect", () => {
+    const script = buildMakeSelection({ type: "rect", bounds: { x: 10, y: 10, width: 200, height: 100 } });
+    expect(script).toContain("select");
+  });
+
+  it("buildModifySelection expand", () => {
+    const script = buildModifySelection({ action: "expand", amount: 5 });
+    expect(script).toContain("expand");
+    expect(script).toContain("5");
+  });
+
+  it("buildFillSelection", () => {
+    const script = buildFillSelection({ color: "#ff0000" });
+    expect(script).toContain("fill");
+    expect(script).toContain("255");
+  });
+
+  it("buildClearSelection", () => {
+    expect(buildClearSelection()).toContain("deselect");
+  });
+
+  it("buildReplaceSmartObject", () => {
+    const script = buildReplaceSmartObject({ target: "Logo", source: "https://example.com/logo.png" });
+    expect(script).toContain("Logo");
+    expect(script).toContain("app.open");
   });
 });
