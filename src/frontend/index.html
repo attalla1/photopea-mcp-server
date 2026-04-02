@@ -445,7 +445,7 @@
       function sendToPhotopea(payload) {
         var iframe = document.getElementById('photopea');
         if (iframe && iframe.contentWindow) {
-          iframe.contentWindow.postMessage(payload, 'https://www.photopea.com');
+          iframe.contentWindow.postMessage(payload, '*');
         }
       }
 
@@ -473,7 +473,7 @@
         // Photopea accepts an ArrayBuffer directly for file loading
         var iframe = document.getElementById('photopea');
         if (iframe && iframe.contentWindow) {
-          iframe.contentWindow.postMessage(bytes.buffer, 'https://www.photopea.com');
+          iframe.contentWindow.postMessage(bytes.buffer, '*');
         }
 
         // The load operation completes when Photopea sends "done"
