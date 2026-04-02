@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Photopea MCP Bridge</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+    }
+
+    /* -------------------------------------------------------------------------
+       Layout: column flex — status bar / iframe / log panel
+    ------------------------------------------------------------------------- */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* -------------------------------------------------------------------------
+       Status bar
+    ------------------------------------------------------------------------- */
+    #status-bar {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      height: 36px;
+      background: #2d2d2d;
+      border-bottom: 1px solid #3a3a3a;
+      user-select: none;
+    }
+
+    #status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #e74c3c;
+      flex-shrink: 0;
+      transition: background 0.25s ease;
+    }
+
+    #status-dot.connected {
+      background: #2ecc71;
+    }
+
+    #status-text {
+      color: #aaa;
+      font-size: 12px;
+      min-width: 100px;
+    }
+
+    #doc-info {
+      margin-left: auto;
+      color: #777;
+      font-size: 11px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+
+    /* -------------------------------------------------------------------------
+       Photopea iframe
+    ------------------------------------------------------------------------- */
+    #photopea-wrap {
+      flex: 1 1 auto;
+      display: flex;
+      min-height: 0;
+    }
+
+    #photopea {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+
+    /* -------------------------------------------------------------------------
+       Activity log panel
+    ------------------------------------------------------------------------- */
+    #log-panel {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      background: #252525;
+      border-top: 1px solid #3a3a3a;
+      max-height: 30vh;
+      transition: max-height 0.2s ease;
+    }
+
+    #log-panel.collapsed {
+      max-height: 28px;
+    }
+
+    #log-header {
+      flex: 0 0 28px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      cursor: pointer;
+      background: #2d2d2d;
+      border-bottom: 1px solid #3a3a3a;
+      user-select: none;
+      gap: 8px;
+    }
+
+    #log-header:hover {
+      background: #333;
+    }
+
+    #log-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #999;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    #log-count {
+      font-size: 11px;
+      color: #666;
+      margin-left: auto;
+    }
+
+    #log-chevron {
+      font-size: 10px;
+      color: #666;
+      transition: transform 0.2s ease;
+    }
+
+    #log-panel.collapsed #log-chevron {
+      transform: rotate(180deg);
+    }
+
+    #log-entries {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+
+    #log-entries::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    #log-entries::-webkit-scrollbar-track {
+      background: #1e1e1e;
+    }
+
+    #log-entries::-webkit-scrollbar-thumb {
+      background: #444;
+      border-radius: 3px;
+    }
+
+    .log-entry {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 3px 12px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      border-left: 2px solid transparent;
+    }
+
+    .log-entry:hover {
+      background: #2a2a2a;
+    }
+
+    .log-entry.entry-ok {
+      border-left-color: #2ecc71;
+    }
+
+    .log-entry.entry-err {
+      border-left-color: #e74c3c;
+    }
+
+    .log-ts {
+      color: #555;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .log-tool {
+      color: #569cd6;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .log-summary {
+      color: #d4d4d4;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #log-empty {
+      padding: 8px 12px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 11px;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+
+    <!-- Status bar -->
+    <div id="status-bar">
+      <div id="status-dot"></div>
+      <span id="status-text">Connecting...</span>
+      <span id="doc-info"></span>
+    </div>
+
+    <!-- Photopea iframe -->
+    <div id="photopea-wrap">
+      <iframe
+        id="photopea"
+        src="https://www.photopea.com"
+        allow="camera; microphone"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+      ></iframe>
+    </div>
+
+    <!-- Activity log -->
+    <div id="log-panel">
+      <div id="log-header">
+        <span id="log-title">Activity Log</span>
+        <span id="log-count">0 entries</span>
+        <span id="log-chevron">&#9650;</span>
+      </div>
+      <div id="log-entries">
+        <div id="log-empty">No activity yet.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // -----------------------------------------------------------------------
+      // DOM refs
+      // -----------------------------------------------------------------------
+      var dot        = document.getElementById('status-dot');
+      var statusText = document.getElementById('status-text');
+      var docInfo    = document.getElementById('doc-info');
+      var logPanel   = document.getElementById('log-panel');
+      var logHeader  = document.getElementById('log-header');
+      var logEntries = document.getElementById('log-entries');
+      var logCount   = document.getElementById('log-count');
+      var logEmpty   = document.getElementById('log-empty');
+
+      // -----------------------------------------------------------------------
+      // State
+      // -----------------------------------------------------------------------
+      var ws              = null;
+      var wsReady         = false;
+      var photopeaReady   = false;
+      var entryCount      = 0;
+      var reconnectDelay  = 1000;   // ms; doubles up to MAX_DELAY
+      var MAX_DELAY       = 10000;
+      var reconnectTimer  = null;
+
+      // Per-execution buffering
+      var pendingId       = null;
+      var echoBuffer      = [];     // string messages from Photopea before "done"
+      var fileBuffer      = null;   // ArrayBuffer from Photopea (last one wins)
+
+      // -----------------------------------------------------------------------
+      // Collapsible log
+      // -----------------------------------------------------------------------
+      logHeader.addEventListener('click', function () {
+        logPanel.classList.toggle('collapsed');
+      });
+
+      // -----------------------------------------------------------------------
+      // Status helpers
+      // -----------------------------------------------------------------------
+      function setConnected(connected) {
+        wsReady = connected;
+        if (connected) {
+          dot.classList.add('connected');
+          statusText.textContent = photopeaReady ? 'Connected — Photopea ready' : 'Connected — waiting for Photopea';
+        } else {
+          dot.classList.remove('connected');
+          statusText.textContent = 'Disconnected';
+          photopeaReady = false;
+        }
+      }
+
+      function setPhotopeaReady() {
+        photopeaReady = true;
+        if (wsReady) {
+          statusText.textContent = 'Connected — Photopea ready';
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // Activity log
+      // -----------------------------------------------------------------------
+      function addLogEntry(tool, summary, isError) {
+        if (logEmpty.parentNode) {
+          logEmpty.remove();
+        }
+
+        entryCount++;
+        updateLogCount();
+
+        var now   = new Date();
+        var hh    = String(now.getHours()).padStart(2, '0');
+        var mm    = String(now.getMinutes()).padStart(2, '0');
+        var ss    = String(now.getSeconds()).padStart(2, '0');
+        var ts    = hh + ':' + mm + ':' + ss;
+
+        var entry = document.createElement('div');
+        entry.className = 'log-entry ' + (isError ? 'entry-err' : 'entry-ok');
+
+        var tsEl = document.createElement('span');
+        tsEl.className = 'log-ts';
+        tsEl.textContent = ts;
+
+        var toolEl = document.createElement('span');
+        toolEl.className = 'log-tool';
+        toolEl.textContent = tool;
+
+        var summaryEl = document.createElement('span');
+        summaryEl.className = 'log-summary';
+        summaryEl.textContent = summary;
+
+        entry.appendChild(tsEl);
+        entry.appendChild(toolEl);
+        entry.appendChild(summaryEl);
+        logEntries.appendChild(entry);
+
+        // Auto-scroll to bottom
+        logEntries.scrollTop = logEntries.scrollHeight;
+      }
+
+      function updateLogCount() {
+        logCount.textContent = entryCount + (entryCount === 1 ? ' entry' : ' entries');
+      }
+
+      // -----------------------------------------------------------------------
+      // WebSocket connection
+      // -----------------------------------------------------------------------
+      function connect() {
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+
+        var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        var url = protocol + '//' + location.host;
+
+        try {
+          ws = new WebSocket(url);
+        } catch (err) {
+          scheduleReconnect();
+          return;
+        }
+
+        ws.onopen = function () {
+          reconnectDelay = 1000;
+          setConnected(true);
+          // If Photopea already signalled ready before WS connected, report now
+          if (photopeaReady) {
+            sendToWS({ type: 'status', status: 'ready' });
+          }
+        };
+
+        ws.onclose = function () {
+          setConnected(false);
+          scheduleReconnect();
+        };
+
+        ws.onerror = function () {
+          // onclose fires right after; no extra handling needed
+        };
+
+        ws.onmessage = function (event) {
+          var msg;
+          try {
+            msg = JSON.parse(event.data);
+          } catch (e) {
+            return;
+          }
+          handleServerMessage(msg);
+        };
+      }
+
+      function scheduleReconnect() {
+        reconnectTimer = setTimeout(function () {
+          reconnectTimer = null;
+          connect();
+        }, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, MAX_DELAY);
+      }
+
+      function sendToWS(obj) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(obj));
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // Server -> client message handling
+      // -----------------------------------------------------------------------
+      function handleServerMessage(msg) {
+        if (msg.type === 'execute') {
+          handleExecute(msg);
+        } else if (msg.type === 'load') {
+          handleLoad(msg);
+        } else if (msg.type === 'activity') {
+          addLogEntry(msg.tool || 'tool', msg.summary || '', false);
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // Execute: forward script to Photopea, collect results, send back
+      // -----------------------------------------------------------------------
+      function handleExecute(msg) {
+        pendingId   = msg.id;
+        echoBuffer  = [];
+        fileBuffer  = null;
+
+        sendToPhotopea(msg.script);
+      }
+
+      function sendToPhotopea(payload) {
+        var iframe = document.getElementById('photopea');
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.postMessage(payload, '*');
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // Load: decode base64 and push ArrayBuffer to Photopea
+      // -----------------------------------------------------------------------
+      function handleLoad(msg) {
+        var id       = msg.id;
+        var b64      = msg.data;
+        var filename = msg.filename;
+
+        var binary;
+        try {
+          binary = atob(b64);
+        } catch (e) {
+          sendToWS({ type: 'result', id: id, success: false, data: null, error: 'base64 decode failed' });
+          return;
+        }
+
+        var bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+
+        // Photopea accepts an ArrayBuffer directly for file loading
+        var iframe = document.getElementById('photopea');
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.postMessage(bytes.buffer, '*');
+        }
+
+        // The load operation completes when Photopea sends "done"
+        // We treat it as a pending request so we wait for "done" then ACK
+        pendingId  = id;
+        echoBuffer = [];
+        fileBuffer = null;
+      }
+
+      // -----------------------------------------------------------------------
+      // Photopea -> page message handling (postMessage listener)
+      // -----------------------------------------------------------------------
+      window.addEventListener('message', function (event) {
+        var data = event.data;
+
+        // ArrayBuffer = exported file data
+        if (data instanceof ArrayBuffer) {
+          fileBuffer = data;
+          return;
+        }
+
+        // String messages
+        if (typeof data === 'string') {
+          if (data === 'done') {
+            handlePhotopea_done();
+          } else {
+            // echoToOE output or other string result
+            echoBuffer.push(data);
+          }
+          return;
+        }
+      });
+
+      function handlePhotopea_done() {
+        if (!photopeaReady) {
+          // First "done" = Photopea has finished loading
+          photopeaReady = true;
+          setPhotopeaReady();
+          if (wsReady) {
+            sendToWS({ type: 'status', status: 'ready' });
+          }
+          return;
+        }
+
+        // Subsequent "done" = script finished executing
+        if (pendingId === null) {
+          return;
+        }
+
+        var id = pendingId;
+        pendingId = null;
+
+        if (fileBuffer !== null) {
+          // File export result
+          var arr  = new Uint8Array(fileBuffer);
+          var b64  = uint8ArrayToBase64(arr);
+          var mime = detectMime(arr);
+          sendToWS({
+            type:     'file',
+            id:       id,
+            success:  true,
+            data:     b64,
+            mimeType: mime,
+            error:    null
+          });
+        } else {
+          // Script result (echoToOE strings joined)
+          var resultData = echoBuffer.length > 0 ? echoBuffer.join('\n') : null;
+          sendToWS({
+            type:    'result',
+            id:      id,
+            success: true,
+            data:    resultData,
+            error:   null
+          });
+        }
+
+        echoBuffer = [];
+        fileBuffer = null;
+      }
+
+      // -----------------------------------------------------------------------
+      // Utilities
+      // -----------------------------------------------------------------------
+
+      function uint8ArrayToBase64(bytes) {
+        var binary = '';
+        var len    = bytes.byteLength;
+        for (var i = 0; i < len; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+      }
+
+      function detectMime(bytes) {
+        // Check magic bytes for common image formats
+        if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+          return 'image/png';
+        }
+        if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+          return 'image/jpeg';
+        }
+        if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+          return 'image/webp';
+        }
+        if (bytes[0] === 0x38 && bytes[1] === 0x42 && bytes[2] === 0x50 && bytes[3] === 0x53) {
+          return 'image/vnd.adobe.photoshop';
+        }
+        return 'application/octet-stream';
+      }
+
+      // -----------------------------------------------------------------------
+      // Boot
+      // -----------------------------------------------------------------------
+      setConnected(false);
+      connect();
+
+    }());
+  </script>
+</body>
+</html>
