@@ -33,8 +33,8 @@ export class PhotopeaBridge {
     // Create bare HTTP server; route handling is added externally via the entry point
     this.httpServer = createServer();
 
-    // Create WSS attached to the HTTP server
-    this.wss = new WebSocketServer({ noServer: true });
+    // Create WSS attached directly to the HTTP server (not noServer mode)
+    this.wss = new WebSocketServer({ server: this.httpServer });
 
     this.wss.on("connection", (ws: WebSocket) => {
       // Accept only one client at a time; close any previous connection
@@ -42,6 +42,7 @@ export class PhotopeaBridge {
         this.client.close();
       }
       this.client = ws;
+      console.error("[Bridge] WebSocket client connected");
 
       ws.on("message", (raw) => {
         try {
@@ -53,6 +54,7 @@ export class PhotopeaBridge {
       });
 
       ws.on("close", () => {
+        console.error("[Bridge] WebSocket client disconnected");
         if (this.client === ws) {
           this.client = null;
           this.ready = false;
@@ -60,8 +62,8 @@ export class PhotopeaBridge {
         }
       });
 
-      ws.on("error", () => {
-        // Error is followed by close; handled there
+      ws.on("error", (err) => {
+        console.error("[Bridge] WebSocket error:", err.message);
       });
     });
   }
@@ -107,13 +109,6 @@ export class PhotopeaBridge {
 
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Attach WebSocket upgrade handler
-      this.httpServer.on("upgrade", (request, socket, head) => {
-        this.wss.handleUpgrade(request, socket, head, (ws) => {
-          this.wss.emit("connection", ws, request);
-        });
-      });
-
       this.httpServer.listen(this.port, "127.0.0.1", () => resolve());
       this.httpServer.once("error", reject);
     });

@@ -28,8 +28,6 @@ async function main(): Promise<void> {
   );
 
   httpServer.on("request", (req, res) => {
-    // Skip WebSocket upgrade requests — they are handled by the "upgrade" event
-    if (req.headers.upgrade) return;
     if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(frontendHtml);
