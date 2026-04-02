@@ -37,12 +37,15 @@ export class PhotopeaBridge {
     this.wss = new WebSocketServer({ server: this.httpServer });
 
     this.wss.on("connection", (ws: WebSocket) => {
-      // Accept only one client at a time; close any previous connection
-      if (this.client && this.client !== ws) {
-        this.client.close();
-      }
+      // Accept the newest connection; silently release the old one
+      const prev = this.client;
       this.client = ws;
-      console.error("[Bridge] WebSocket client connected");
+
+      if (prev && prev !== ws && prev.readyState === WebSocket.OPEN) {
+        // Silently terminate without triggering our close handler logic
+        prev.removeAllListeners();
+        prev.terminate();
+      }
 
       ws.on("message", (raw) => {
         try {
@@ -54,7 +57,7 @@ export class PhotopeaBridge {
       });
 
       ws.on("close", () => {
-        console.error("[Bridge] WebSocket client disconnected");
+        // Only reset state if THIS ws is still the active client
         if (this.client === ws) {
           this.client = null;
           this.ready = false;
@@ -62,8 +65,8 @@ export class PhotopeaBridge {
         }
       });
 
-      ws.on("error", (err) => {
-        console.error("[Bridge] WebSocket error:", err.message);
+      ws.on("error", () => {
+        // Error is followed by close; handled there
       });
     });
   }
