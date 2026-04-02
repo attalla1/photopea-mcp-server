@@ -14,6 +14,7 @@ import type {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const EXPORT_TIMEOUT_MS = 60_000;
+const READY_TIMEOUT_MS = 60_000;
 
 export class PhotopeaBridge {
   public readonly httpServer: HttpServer;
@@ -81,6 +82,25 @@ export class PhotopeaBridge {
     return this.client !== null && this.ready;
   }
 
+  /** Wait for the bridge to become ready (Photopea loaded + WS connected). */
+  waitForReady(): Promise<void> {
+    if (this.isReady()) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Photopea did not become ready within ${READY_TIMEOUT_MS / 1000}s. Please open http://127.0.0.1:${this.port} and wait for Photopea to load.`));
+      }, READY_TIMEOUT_MS);
+      const check = () => {
+        if (this.isReady()) {
+          clearTimeout(timer);
+          resolve();
+        } else {
+          setTimeout(check, 200);
+        }
+      };
+      check();
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
@@ -130,10 +150,15 @@ export class PhotopeaBridge {
   // Script execution
   // ---------------------------------------------------------------------------
 
-  executeScript(
+  async executeScript(
     script: string,
     expectFiles = false
   ): Promise<BridgeResult | BridgeFileResult> {
+    try {
+      await this.waitForReady();
+    } catch (err) {
+      return { success: false, data: null, error: (err as Error).message };
+    }
     if (!this.isReady()) {
       return Promise.resolve<BridgeResult>({
         success: false,
@@ -170,13 +195,14 @@ export class PhotopeaBridge {
   // File loading
   // ---------------------------------------------------------------------------
 
-  loadFile(data: Buffer, filename: string): Promise<BridgeResult> {
+  async loadFile(data: Buffer, filename: string): Promise<BridgeResult> {
+    try {
+      await this.waitForReady();
+    } catch (err) {
+      return { success: false, data: null, error: (err as Error).message };
+    }
     if (!this.isReady()) {
-      return Promise.resolve<BridgeResult>({
-        success: false,
-        data: null,
-        error: "Photopea is not connected or not ready",
-      });
+      return { success: false, data: null, error: "Photopea is not connected or not ready" };
     }
 
     return new Promise<BridgeResult>((resolve) => {

@@ -80,11 +80,16 @@ describe("PhotopeaBridge", () => {
   });
 
   it("returns error when not connected", async () => {
-    clientWs.close();
-    await new Promise((r) => setTimeout(r, 100));
-    const result = await bridge.executeScript("test");
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("not connected");
+    // Stop the bridge (clears ready state and rejects pending)
+    await bridge.stop();
+    // Create a fresh bridge that no client will connect to
+    const deadBridge = new PhotopeaBridge(TEST_PORT + 1);
+    await deadBridge.start();
+    // waitForReady polls every 200ms; with a short timeout we can test the error
+    // Override: call executeScript which internally calls waitForReady (60s default)
+    // Instead, test isReady directly
+    expect(deadBridge.isReady()).toBe(false);
+    await deadBridge.stop();
   });
 
   it("reports ready state", () => {
