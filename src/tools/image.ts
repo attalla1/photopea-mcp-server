@@ -14,6 +14,7 @@ import {
   buildFillSelection,
   buildClearSelection,
   buildReplaceSmartObject,
+  escapeString,
 } from "../bridge/script-builder.js";
 import { readLocalFile, isUrl } from "../utils/file-io.js";
 
@@ -52,6 +53,25 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
       const filename = source.split("/").pop() || "image";
       const result = await bridge.loadFile(fileData, filename);
       if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to load local image" }] };
+
+      // Apply positioning/sizing/naming if any were specified
+      if (params.x !== undefined || params.y !== undefined || params.width || params.height || params.name) {
+        const posLines: string[] = [];
+        posLines.push(`var _pl = app.activeDocument.activeLayer;`);
+        if (params.name) posLines.push(`_pl.name = '${escapeString(params.name)}';`);
+        if (params.width && params.height) {
+          posLines.push(`var _b = _pl.bounds;`);
+          posLines.push(`var _cw = _b[2].as('px') - _b[0].as('px');`);
+          posLines.push(`var _ch = _b[3].as('px') - _b[1].as('px');`);
+          posLines.push(`_pl.resize(${params.width} / _cw * 100, ${params.height} / _ch * 100);`);
+        }
+        if (params.x !== undefined && params.y !== undefined) {
+          posLines.push(`var _b2 = _pl.bounds;`);
+          posLines.push(`_pl.translate(${params.x} - _b2[0].as('px'), ${params.y} - _b2[1].as('px'));`);
+        }
+        posLines.push(`app.echoToOE('ok');`);
+        await bridge.executeScript(posLines.join("\n"));
+      }
     }
 
     return { content: [{ type: "text" as const, text: `Image placed: ${source}` }] };

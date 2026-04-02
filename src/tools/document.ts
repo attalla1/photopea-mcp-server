@@ -8,6 +8,7 @@ import {
   buildGetDocumentInfo,
   buildResizeDocument,
   buildCloseDocument,
+  escapeString,
 } from "../bridge/script-builder.js";
 import { readLocalFile, isUrl } from "../utils/file-io.js";
 
@@ -48,7 +49,7 @@ export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge)
 
     if (isUrl(source)) {
       const mode = asSmart ? ", null, true" : "";
-      const script = `app.open('${source.replace(/'/g, "\\'")}' ${mode});app.echoToOE('ok');`;
+      const script = `app.open('${escapeString(source)}'${mode});app.echoToOE('ok');`;
       const result = await bridge.executeScript(script);
       if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to open URL" }] };
     } else {

@@ -89,7 +89,17 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
     const errors: string[] = [];
 
     for (const entry of params.exports) {
-      const script = buildExportImage({ format: entry.format, quality: entry.quality, outputPath: entry.outputPath });
+      let script: string;
+      if (entry.width && entry.height) {
+        // Duplicate, resize, export, close
+        script = [
+          `var _dup = app.activeDocument.duplicate();`,
+          `_dup.resizeImage(${entry.width}, ${entry.height});`,
+          `_dup.saveToOE('${entry.format === "jpg" && entry.quality ? `jpg:${entry.quality}` : entry.format}');`,
+        ].join("\n");
+      } else {
+        script = buildExportImage({ format: entry.format, quality: entry.quality, outputPath: entry.outputPath });
+      }
       bridge.sendActivity({ type: "activity", id: "", tool: "batch_export", summary: `Batch export as ${entry.format}` });
       const rawResult = await bridge.executeScript(script, true);
 
@@ -104,6 +114,11 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
         results.push(entry.outputPath);
       } catch (err) {
         errors.push(`${entry.outputPath}: write failed — ${(err as Error).message}`);
+        continue;
+      }
+
+      if (entry.width && entry.height) {
+        await bridge.executeScript(`app.activeDocument.close(SaveOptions.DONOTSAVECHANGES);`);
       }
     }
 

@@ -23,6 +23,7 @@ export class PhotopeaBridge {
   private queue: PendingRequest[] = [];
   private processing: boolean = false;
   private pendingScripts: Map<string, string> = new Map();
+  private pendingLoads: Map<string, string> = new Map(); // id -> serialized LoadMessage JSON
   private port: number;
 
   constructor(port: number) {
@@ -188,7 +189,7 @@ export class PhotopeaBridge {
       };
 
       const timer = setTimeout(() => {
-        this.pendingScripts.delete(id);
+        this.pendingLoads.delete(id);
         this.queue = this.queue.filter((r) => r.id !== id);
         this.processing = false;
         resolve({
@@ -199,9 +200,8 @@ export class PhotopeaBridge {
         this.processNext();
       }, DEFAULT_TIMEOUT_MS);
 
-      // loadFile uses the same queue/resolve mechanism but doesn't need a script
-      // We store a placeholder so processNext can look it up
-      this.pendingScripts.set(id, "__load__");
+      // Store the serialized load message so processNext can send it when the queue is free
+      this.pendingLoads.set(id, JSON.stringify(msg));
 
       const pending: PendingRequest = {
         id,
@@ -212,45 +212,7 @@ export class PhotopeaBridge {
       };
 
       this.queue.push(pending);
-
-      // Send load message directly (bypassing the normal execute path)
-      // We intercept in processNext by checking for the __load__ placeholder
-      if (!this.processing && this.client) {
-        this.processing = true;
-        this.queue.shift(); // remove the one we just added
-        this.pendingScripts.delete(id);
-        clearTimeout(timer);
-
-        if (this.client.readyState === WebSocket.OPEN) {
-          this.client.send(JSON.stringify(msg));
-
-          // Wait for result — re-register as a pending request with a fresh timer
-          const freshTimer = setTimeout(() => {
-            this.pendingScripts.delete(id);
-            this.queue = this.queue.filter((r) => r.id !== id);
-            this.processing = false;
-            resolve({
-              success: false,
-              data: null,
-              error: `loadFile timed out after ${DEFAULT_TIMEOUT_MS / 1000}s`,
-            });
-            this.processNext();
-          }, DEFAULT_TIMEOUT_MS);
-
-          const freshPending: PendingRequest = {
-            id,
-            resolve: resolve as (v: BridgeResult | BridgeFileResult) => void,
-            reject: () => {},
-            expectFiles: false,
-            timer: freshTimer,
-          };
-          // Push to front of an in-flight slot (queue is empty/other items)
-          this.queue.unshift(freshPending);
-        } else {
-          this.processing = false;
-          resolve({ success: false, data: null, error: "WebSocket not open" });
-        }
-      }
+      this.processNext();
     });
   }
 
@@ -264,6 +226,25 @@ export class PhotopeaBridge {
     }
 
     const next = this.queue[0];
+
+    // Check if this is a queued load message
+    const loadMsg = this.pendingLoads.get(next.id);
+    if (loadMsg) {
+      this.pendingLoads.delete(next.id);
+      this.processing = true;
+      if (this.client.readyState === WebSocket.OPEN) {
+        this.client.send(loadMsg);
+      } else {
+        // Client gone; resolve with error and continue
+        clearTimeout(next.timer);
+        this.queue.shift();
+        this.processing = false;
+        next.resolve({ success: false, data: null, error: "WebSocket not open" });
+        this.processNext();
+      }
+      return;
+    }
+
     const script = this.pendingScripts.get(next.id);
 
     if (script === undefined) {
@@ -317,6 +298,7 @@ export class PhotopeaBridge {
       clearTimeout(pending.timer);
       this.queue.splice(pendingIndex, 1);
       this.pendingScripts.delete(id);
+      this.pendingLoads.delete(id);
       this.processing = false;
 
       if (msg.type === "file") {
@@ -352,6 +334,7 @@ export class PhotopeaBridge {
     for (const pending of snapshot) {
       clearTimeout(pending.timer);
       this.pendingScripts.delete(pending.id);
+      this.pendingLoads.delete(pending.id);
       // Resolve (not reject) with an error result so callers don't need try/catch
       pending.resolve({
         success: false,

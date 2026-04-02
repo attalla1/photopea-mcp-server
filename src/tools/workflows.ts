@@ -1,6 +1,6 @@
 // src/tools/workflows.ts
 import { z } from "zod";
-import type { BridgeResult } from "../bridge/types.js";
+import type { BridgeResult, BridgeFileResult } from "../bridge/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { PhotopeaBridge } from "../bridge/websocket-server.js";
 import {
@@ -9,7 +9,9 @@ import {
   buildLoadTemplate,
   buildApplyTemplateVariables,
   buildComposeLayers,
+  buildExportImage,
 } from "../bridge/script-builder.js";
+import { writeLocalFile } from "../utils/file-io.js";
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/).describe("Color as hex string (e.g. #ff0000)");
 
@@ -61,6 +63,16 @@ export function registerWorkflowTools(server: McpServer, bridge: PhotopeaBridge)
     bridge.sendActivity({ type: "activity", id: "", tool: "create_banner", summary: `Create ${params.width}x${params.height} banner: "${params.title}"` });
     const result = await bridge.executeScript(script);
     if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to create banner" }] };
+
+    if (params.outputPath) {
+      const exportScript = buildExportImage({ format: "png", outputPath: params.outputPath });
+      const exportResult = await bridge.executeScript(exportScript, true);
+      if (exportResult.success) {
+        const fileResult = exportResult as BridgeFileResult;
+        await writeLocalFile(params.outputPath, fileResult.data);
+      }
+    }
+
     return { content: [{ type: "text" as const, text: `Banner created: "${params.title}" (${params.width}x${params.height})` }] };
   });
 
