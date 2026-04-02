@@ -6,7 +6,6 @@ import type { BridgeFileResult } from "../bridge/types.js";
 import {
   buildExportImage,
   buildGetPreview,
-  buildBatchExport,
   buildRunScript,
   buildUndo,
   buildRedo,
