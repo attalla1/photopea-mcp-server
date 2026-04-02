@@ -508,6 +508,14 @@
           }
           return;
         }
+
+        // Photopea may also send "done" inside an object (e.g. postMessage from newer versions)
+        if (data && typeof data === 'object') {
+          if (data.type === 'done' || data.status === 'done' || data === 'done') {
+            handlePhotopea_done();
+          }
+          return;
+        }
       });
 
       function handlePhotopea_done() {
