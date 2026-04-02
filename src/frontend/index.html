@@ -492,6 +492,11 @@
         if (!iframe || (iframe.contentWindow && event.source !== iframe.contentWindow)) return;
         var data = event.data;
 
+        // Any message from Photopea means it's loaded — mark ready on first contact
+        if (!photopeaReady) {
+          handlePhotopea_done();
+        }
+
         // ArrayBuffer = exported file data
         if (data instanceof ArrayBuffer) {
           fileBuffer = data;
@@ -505,14 +510,6 @@
           } else {
             // echoToOE output or other string result
             echoBuffer.push(data);
-          }
-          return;
-        }
-
-        // Photopea may also send "done" inside an object (e.g. postMessage from newer versions)
-        if (data && typeof data === 'object') {
-          if (data.type === 'done' || data.status === 'done' || data === 'done') {
-            handlePhotopea_done();
           }
           return;
         }
