@@ -29,6 +29,17 @@ import {
   buildFillSelection,
   buildClearSelection,
   buildReplaceSmartObject,
+  buildExportImage,
+  buildGetPreview,
+  buildBatchExport,
+  buildRunScript,
+  buildUndo,
+  buildRedo,
+  buildSetBackground,
+  buildCreateBanner,
+  buildLoadTemplate,
+  buildApplyTemplateVariables,
+  buildComposeLayers,
 } from "../../src/bridge/script-builder.js";
 
 describe("hexToRgb", () => {
@@ -243,5 +254,108 @@ describe("script-builder: selection operations", () => {
     const script = buildReplaceSmartObject({ target: "Logo", source: "https://example.com/logo.png" });
     expect(script).toContain("Logo");
     expect(script).toContain("app.open");
+  });
+});
+
+describe("script-builder: export operations", () => {
+  it("buildExportImage png", () => {
+    const script = buildExportImage({ format: "png", outputPath: "/tmp/out.png" });
+    expect(script).toContain("saveToOE");
+    expect(script).toContain("png");
+  });
+
+  it("buildExportImage jpg with quality", () => {
+    const script = buildExportImage({ format: "jpg", quality: 0.8, outputPath: "/tmp/out.jpg" });
+    expect(script).toContain("jpg:0.8");
+  });
+
+  it("buildGetPreview with max dimensions", () => {
+    const script = buildGetPreview({ maxWidth: 400, maxHeight: 300 });
+    expect(script).toContain("saveToOE");
+    expect(script).toContain("png");
+  });
+
+  it("buildBatchExport multiple formats", () => {
+    const script = buildBatchExport({
+      exports: [
+        { format: "png", outputPath: "/tmp/out.png" },
+        { format: "jpg", quality: 0.9, outputPath: "/tmp/out.jpg" },
+      ],
+    });
+    expect(script).toContain("png");
+    expect(script).toContain("jpg");
+  });
+});
+
+describe("script-builder: utility operations", () => {
+  it("buildRunScript passes through", () => {
+    expect(buildRunScript("alert('hi');")).toBe("alert('hi');");
+  });
+
+  it("buildUndo multiple steps", () => {
+    const script = buildUndo(3);
+    // Should contain 3 undo operations
+    const matches = script.match(/undo|historyState/g);
+    expect(matches).not.toBeNull();
+    expect(matches!.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("buildRedo multiple steps", () => {
+    const script = buildRedo(2);
+    const matches = script.match(/Rdo|redo/gi);
+    expect(matches).not.toBeNull();
+    expect(matches!.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("script-builder: workflow operations", () => {
+  it("buildSetBackground solid", () => {
+    const script = buildSetBackground({ type: "solid", color: "#1a1a2e" });
+    expect(script).toContain("SolidColor");
+    expect(script).toContain("Background");
+  });
+
+  it("buildSetBackground gradient", () => {
+    const script = buildSetBackground({ type: "gradient", gradient: { colors: ["#1a1a2e", "#16213e"], angle: 90 } });
+    expect(script).toContain("Grad");
+  });
+
+  it("buildCreateBanner", () => {
+    const script = buildCreateBanner({
+      width: 1920, height: 1080, title: "AI Summit 2026",
+      subtitle: "The Future of AI", backgroundColor: "#1a1a2e",
+      titleColor: "#ffffff", titleSize: 72, layout: "centered",
+    });
+    expect(script).toContain("app.documents.add");
+    expect(script).toContain("1920");
+    expect(script).toContain("AI Summit 2026");
+    expect(script).toContain("The Future of AI");
+    expect(script).toContain("LayerKind.TEXT");
+  });
+
+  it("buildLoadTemplate", () => {
+    const script = buildLoadTemplate({ source: "https://example.com/template.psd" });
+    expect(script).toContain("app.open");
+    expect(script).toContain("echoToOE");
+    expect(script).toContain("JSON.stringify");
+  });
+
+  it("buildApplyTemplateVariables", () => {
+    const script = buildApplyTemplateVariables({ variables: { "Title": "New Title", "Sub": "New Sub" } });
+    expect(script).toContain("Title");
+    expect(script).toContain("New Title");
+    expect(script).toContain("LayerKind.TEXT");
+  });
+
+  it("buildComposeLayers", () => {
+    const script = buildComposeLayers({
+      layers: [
+        { type: "fill", color: "#000000" },
+        { type: "text", content: "Hello", x: 100, y: 200, size: 48, color: "#ffffff" },
+      ],
+    });
+    expect(script).toContain("SolidColor");
+    expect(script).toContain("Hello");
+    expect(script).toContain("LayerKind.TEXT");
   });
 });

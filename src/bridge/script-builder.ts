@@ -25,6 +25,14 @@ import type {
   ModifySelectionParams,
   FillSelectionParams,
   ReplaceSmartObjectParams,
+  ExportImageParams,
+  GetPreviewParams,
+  BatchExportParams,
+  SetBackgroundParams,
+  CreateBannerParams,
+  LoadTemplateParams,
+  ApplyTemplateVariablesParams,
+  ComposeLayersParams,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -908,6 +916,365 @@ export function buildReplaceSmartObject(params: ReplaceSmartObjectParams): strin
   lines.push(`var _layer = ${ref};`);
   lines.push(`app.activeDocument.activeLayer = _layer;`);
   lines.push(`var _newContent = app.open('${escapeString(source)}', null, true);`);
+
+  lines.push(`app.echoToOE('ok');`);
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Export operations
+// ---------------------------------------------------------------------------
+
+export function buildExportImage(params: ExportImageParams): string {
+  const { format, quality } = params;
+  const lines: string[] = [];
+
+  let formatStr: string;
+  if (format === "jpg" && quality !== undefined) {
+    formatStr = `jpg:${quality}`;
+  } else {
+    formatStr = format;
+  }
+
+  lines.push(`app.activeDocument.saveToOE('${formatStr}');`);
+  return lines.join("\n");
+}
+
+export function buildGetPreview(params: GetPreviewParams): string {
+  const { maxWidth, maxHeight } = params;
+  const lines: string[] = [];
+
+  if (maxWidth !== undefined || maxHeight !== undefined) {
+    const w = maxWidth ?? 0;
+    const h = maxHeight ?? 0;
+    lines.push(`var _previewDoc = app.activeDocument.duplicate();`);
+    if (w > 0 && h > 0) {
+      lines.push(`_previewDoc.resizeImage(${w}, ${h});`);
+    } else if (w > 0) {
+      lines.push(`_previewDoc.resizeImage(${w}, null);`);
+    } else {
+      lines.push(`_previewDoc.resizeImage(null, ${h});`);
+    }
+    lines.push(`_previewDoc.saveToOE('png');`);
+    lines.push(`_previewDoc.close(SaveOptions.DONOTSAVECHANGES);`);
+  } else {
+    lines.push(`app.activeDocument.saveToOE('png');`);
+  }
+
+  return lines.join("\n");
+}
+
+export function buildBatchExport(params: BatchExportParams): string {
+  const { exports } = params;
+  const lines: string[] = [];
+
+  for (let i = 0; i < exports.length; i++) {
+    const entry = exports[i];
+    const { format, quality, width, height } = entry;
+
+    let formatStr: string;
+    if (format === "jpg" && quality !== undefined) {
+      formatStr = `jpg:${quality}`;
+    } else {
+      formatStr = format;
+    }
+
+    if (width !== undefined || height !== undefined) {
+      const docVar = `_batchDoc${i}`;
+      lines.push(`var ${docVar} = app.activeDocument.duplicate();`);
+      if (width !== undefined && height !== undefined) {
+        lines.push(`${docVar}.resizeImage(${width}, ${height});`);
+      } else if (width !== undefined) {
+        lines.push(`${docVar}.resizeImage(${width}, null);`);
+      } else {
+        lines.push(`${docVar}.resizeImage(null, ${height});`);
+      }
+      lines.push(`${docVar}.saveToOE('${formatStr}');`);
+      lines.push(`${docVar}.close(SaveOptions.DONOTSAVECHANGES);`);
+    } else {
+      lines.push(`app.activeDocument.saveToOE('${formatStr}');`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Utility operations
+// ---------------------------------------------------------------------------
+
+export function buildRunScript(script: string): string {
+  return script;
+}
+
+export function buildUndo(steps: number): string {
+  const lines: string[] = [];
+  for (let i = 0; i < steps; i++) {
+    lines.push(
+      `app.activeDocument.activeHistoryState = app.activeDocument.historyStates[app.activeDocument.historyStates.length - 2];`
+    );
+  }
+  return lines.join("\n");
+}
+
+export function buildRedo(steps: number): string {
+  const lines: string[] = [];
+  for (let i = 0; i < steps; i++) {
+    lines.push(`executeAction(charIDToTypeID('Rdo '), undefined, DialogModes.NO);`);
+  }
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Workflow operations
+// ---------------------------------------------------------------------------
+
+export function buildSetBackground(params: SetBackgroundParams): string {
+  const { type, color, gradient, imageSource, blur } = params;
+  const lines: string[] = [];
+
+  lines.push(`var _bgLayer = app.activeDocument.artLayers.add();`);
+  lines.push(`_bgLayer.name = 'Background';`);
+  lines.push(`_bgLayer.move(app.activeDocument, ElementPlacement.PLACEATEND);`);
+
+  if (type === "solid" && color !== undefined) {
+    const { r, g, b } = hexToRgb(color);
+    lines.push(solidColorLines("_bgColor", r, g, b));
+    lines.push(`app.activeDocument.selection.selectAll();`);
+    lines.push(`app.activeDocument.selection.fill(_bgColor);`);
+    lines.push(`app.activeDocument.selection.deselect();`);
+  } else if (type === "gradient" && gradient !== undefined) {
+    const { colors, angle = 0 } = gradient;
+    lines.push(`var _gradDesc = new ActionDescriptor();`);
+    lines.push(`var _gradObj = new ActionDescriptor();`);
+    lines.push(`var _colorStops = new ActionList();`);
+    const stopCount = colors.length;
+    for (let i = 0; i < stopCount; i++) {
+      const { r, g, b } = hexToRgb(colors[i]);
+      const location = Math.round((i / Math.max(stopCount - 1, 1)) * 4096);
+      lines.push(`var _bgStop${i} = new ActionDescriptor();`);
+      lines.push(`var _bgStopColor${i} = new ActionDescriptor();`);
+      lines.push(`_bgStopColor${i}.putDouble(charIDToTypeID('Rd  '), ${r});`);
+      lines.push(`_bgStopColor${i}.putDouble(charIDToTypeID('Grn '), ${g});`);
+      lines.push(`_bgStopColor${i}.putDouble(charIDToTypeID('Bl  '), ${b});`);
+      lines.push(`_bgStop${i}.putObject(charIDToTypeID('Clr '), charIDToTypeID('RGBC'), _bgStopColor${i});`);
+      lines.push(`_bgStop${i}.putInteger(charIDToTypeID('Lctn'), ${location});`);
+      lines.push(`_bgStop${i}.putInteger(charIDToTypeID('Mdpn'), 50);`);
+      lines.push(`_colorStops.putObject(charIDToTypeID('Clrs'), _bgStop${i});`);
+    }
+    lines.push(`_gradObj.putList(charIDToTypeID('Clrs'), _colorStops);`);
+    lines.push(`_gradDesc.putObject(charIDToTypeID('Grad'), charIDToTypeID('Grdn'), _gradObj);`);
+    lines.push(`_gradDesc.putEnumerated(charIDToTypeID('Type'), charIDToTypeID('GrdT'), charIDToTypeID('Lnr '));`);
+    lines.push(`_gradDesc.putUnitDouble(charIDToTypeID('Angl'), charIDToTypeID('#Ang'), ${angle});`);
+    lines.push(`_gradDesc.putUnitDouble(charIDToTypeID('Scl '), charIDToTypeID('#Prc'), 100);`);
+    lines.push(`var _bgFillDesc = new ActionDescriptor();`);
+    lines.push(`_bgFillDesc.putObject(charIDToTypeID('T   '), charIDToTypeID('GrFl'), _gradDesc);`);
+    lines.push(`executeAction(charIDToTypeID('Fl  '), _bgFillDesc, DialogModes.NO);`);
+  } else if (type === "image" && imageSource !== undefined) {
+    lines.push(`var _bgImg = app.open('${escapeString(imageSource)}', null, true);`);
+    if (blur !== undefined && blur > 0) {
+      lines.push(`_bgImg.applyGaussianBlur(${blur});`);
+    }
+  }
+
+  lines.push(`app.echoToOE('ok');`);
+  return lines.join("\n");
+}
+
+export function buildCreateBanner(params: CreateBannerParams): string {
+  const {
+    width,
+    height,
+    title,
+    subtitle,
+    backgroundColor = "#ffffff",
+    accentColor = "#0066cc",
+    titleFont,
+    titleSize = 48,
+    titleColor = "#000000",
+    layout = "centered",
+  } = params;
+
+  const lines: string[] = [];
+
+  // 1. Create document
+  lines.push(`app.documents.add(${width}, ${height}, 72, 'Banner', NewDocumentMode.RGB);`);
+
+  // 2. Background fill layer
+  const { r: bgR, g: bgG, b: bgB } = hexToRgb(backgroundColor);
+  lines.push(solidColorLines("_bannerBg", bgR, bgG, bgB));
+  lines.push(`app.foregroundColor = _bannerBg;`);
+  lines.push(`var _bgLayer = app.activeDocument.artLayers.add();`);
+  lines.push(`_bgLayer.name = 'Background';`);
+  lines.push(`_bgLayer.move(app.activeDocument, ElementPlacement.PLACEATEND);`);
+  lines.push(`app.activeDocument.selection.selectAll();`);
+  lines.push(`app.activeDocument.selection.fill(_bannerBg);`);
+  lines.push(`app.activeDocument.selection.deselect();`);
+
+  // 3. Accent bar
+  const { r: acR, g: acG, b: acB } = hexToRgb(accentColor);
+  lines.push(solidColorLines("_accentColor", acR, acG, acB));
+  lines.push(`var _accentLayer = app.activeDocument.artLayers.add();`);
+  lines.push(`_accentLayer.name = 'Accent';`);
+  if (layout === "left") {
+    // Left sidebar accent bar
+    lines.push(`app.activeDocument.selection.select([[0,0],[${Math.round(width * 0.06)},0],[${Math.round(width * 0.06)},${height}],[0,${height}]]);`);
+  } else {
+    // Bottom bar for centered/split
+    const barH = Math.round(height * 0.04);
+    lines.push(`app.activeDocument.selection.select([[0,${height - barH}],[${width},${height - barH}],[${width},${height}],[0,${height}]]);`);
+  }
+  lines.push(`app.activeDocument.selection.fill(_accentColor);`);
+  lines.push(`app.activeDocument.selection.deselect();`);
+
+  // 4. Title text layer
+  const { r: tR, g: tG, b: tB } = hexToRgb(titleColor);
+  lines.push(`var _titleLayer = app.activeDocument.artLayers.add();`);
+  lines.push(`_titleLayer.kind = LayerKind.TEXT;`);
+  lines.push(`_titleLayer.name = 'Title';`);
+  lines.push(`var _titleTI = _titleLayer.textItem;`);
+  lines.push(`_titleTI.contents = '${escapeString(title)}';`);
+  if (layout === "centered") {
+    lines.push(`_titleTI.position = [${Math.round(width / 2)}, ${Math.round(height / 2)}];`);
+    lines.push(`_titleTI.justification = Justification.CENTER;`);
+  } else {
+    lines.push(`_titleTI.position = [${Math.round(width * 0.1)}, ${Math.round(height * 0.4)}];`);
+    lines.push(`_titleTI.justification = Justification.LEFT;`);
+  }
+  lines.push(`_titleTI.size = ${titleSize};`);
+  if (titleFont !== undefined) {
+    lines.push(`_titleTI.font = '${escapeString(titleFont)}';`);
+  }
+  lines.push(solidColorLines("_titleColor", tR, tG, tB));
+  lines.push(`_titleTI.color = _titleColor;`);
+
+  // 5. Optional subtitle text layer
+  if (subtitle !== undefined) {
+    lines.push(`var _subLayer = app.activeDocument.artLayers.add();`);
+    lines.push(`_subLayer.kind = LayerKind.TEXT;`);
+    lines.push(`_subLayer.name = 'Subtitle';`);
+    lines.push(`var _subTI = _subLayer.textItem;`);
+    lines.push(`_subTI.contents = '${escapeString(subtitle)}';`);
+    if (layout === "centered") {
+      lines.push(`_subTI.position = [${Math.round(width / 2)}, ${Math.round(height / 2) + titleSize + 20}];`);
+      lines.push(`_subTI.justification = Justification.CENTER;`);
+    } else {
+      lines.push(`_subTI.position = [${Math.round(width * 0.1)}, ${Math.round(height * 0.4) + titleSize + 20}];`);
+      lines.push(`_subTI.justification = Justification.LEFT;`);
+    }
+    lines.push(`_subTI.size = ${Math.round(titleSize * 0.5)};`);
+    lines.push(solidColorLines("_subColor", tR, tG, tB));
+    lines.push(`_subTI.color = _subColor;`);
+  }
+
+  lines.push(`app.echoToOE('ok');`);
+  return lines.join("\n");
+}
+
+export function buildLoadTemplate(params: LoadTemplateParams): string {
+  const { source } = params;
+  return [
+    `app.open('${escapeString(source)}');`,
+    `function _collectLayers(collection, depth) {`,
+    `  var result = [];`,
+    `  for (var i = 0; i < collection.length; i++) {`,
+    `    var l = collection[i];`,
+    `    var entry = {`,
+    `      name: l.name,`,
+    `      index: i,`,
+    `      type: l.typename,`,
+    `      visible: l.visible,`,
+    `      opacity: l.opacity,`,
+    `      bounds: {`,
+    `        x: l.bounds ? l.bounds[0].value : 0,`,
+    `        y: l.bounds ? l.bounds[1].value : 0,`,
+    `        width: l.bounds ? (l.bounds[2].value - l.bounds[0].value) : 0,`,
+    `        height: l.bounds ? (l.bounds[3].value - l.bounds[1].value) : 0`,
+    `      }`,
+    `    };`,
+    `    if (l.layers && l.layers.length > 0) {`,
+    `      entry.children = _collectLayers(l.layers, depth + 1);`,
+    `    }`,
+    `    result.push(entry);`,
+    `  }`,
+    `  return result;`,
+    `}`,
+    `var _tree = _collectLayers(app.activeDocument.layers, 0);`,
+    `app.echoToOE(JSON.stringify(_tree));`,
+  ].join("\n");
+}
+
+export function buildApplyTemplateVariables(params: ApplyTemplateVariablesParams): string {
+  const { variables } = params;
+  const lines: string[] = [];
+
+  lines.push(`var _vars = ${JSON.stringify(variables)};`);
+  lines.push(`var _entries = Object.entries(_vars);`);
+  lines.push(`for (var _vi = 0; _vi < _entries.length; _vi++) {`);
+  lines.push(`  var _layerName = _entries[_vi][0];`);
+  lines.push(`  var _layerValue = _entries[_vi][1];`);
+  lines.push(`  try {`);
+  lines.push(`    var _tvLayer = app.activeDocument.layers.getByName(_layerName);`);
+  lines.push(`    if (_tvLayer.kind === LayerKind.TEXT) {`);
+  lines.push(`      _tvLayer.textItem.contents = _layerValue;`);
+  lines.push(`    }`);
+  lines.push(`  } catch (e) {}`);
+  lines.push(`}`);
+  lines.push(`app.echoToOE('ok');`);
+
+  return lines.join("\n");
+}
+
+export function buildComposeLayers(params: ComposeLayersParams): string {
+  const { layers } = params;
+  const lines: string[] = [];
+
+  for (let i = 0; i < layers.length; i++) {
+    const entry = layers[i];
+    const varSuffix = `_cl${i}`;
+
+    if (entry.type === "fill") {
+      const color = (entry.color as string | undefined) ?? "#000000";
+      const { r, g, b } = hexToRgb(color);
+      lines.push(solidColorLines(`${varSuffix}Color`, r, g, b));
+      lines.push(`var ${varSuffix} = app.activeDocument.artLayers.add();`);
+      lines.push(`app.activeDocument.selection.selectAll();`);
+      lines.push(`app.activeDocument.selection.fill(${varSuffix}Color);`);
+      lines.push(`app.activeDocument.selection.deselect();`);
+    } else if (entry.type === "text") {
+      const content = (entry.content as string | undefined) ?? "";
+      const x = (entry.x as number | undefined) ?? 0;
+      const y = (entry.y as number | undefined) ?? 0;
+      const size = (entry.size as number | undefined) ?? 16;
+      const color = (entry.color as string | undefined) ?? "#000000";
+      const { r, g, b } = hexToRgb(color);
+      lines.push(`var ${varSuffix} = app.activeDocument.artLayers.add();`);
+      lines.push(`${varSuffix}.kind = LayerKind.TEXT;`);
+      lines.push(`var ${varSuffix}TI = ${varSuffix}.textItem;`);
+      lines.push(`${varSuffix}TI.contents = '${escapeString(content)}';`);
+      lines.push(`${varSuffix}TI.position = [${x}, ${y}];`);
+      lines.push(`${varSuffix}TI.size = ${size};`);
+      lines.push(solidColorLines(`${varSuffix}Color`, r, g, b));
+      lines.push(`${varSuffix}TI.color = ${varSuffix}Color;`);
+    } else if (entry.type === "image") {
+      const source = (entry.source as string | undefined) ?? "";
+      lines.push(`var ${varSuffix} = app.open('${escapeString(source)}', null, true);`);
+    } else if (entry.type === "shape") {
+      const x = (entry.x as number | undefined) ?? 0;
+      const y = (entry.y as number | undefined) ?? 0;
+      const width = (entry.width as number | undefined) ?? 100;
+      const height = (entry.height as number | undefined) ?? 100;
+      const color = (entry.color as string | undefined) ?? "#000000";
+      const { r, g, b } = hexToRgb(color);
+      lines.push(`var ${varSuffix} = app.activeDocument.artLayers.add();`);
+      lines.push(solidColorLines(`${varSuffix}Color`, r, g, b));
+      lines.push(
+        `app.activeDocument.selection.select([[${x},${y}],[${x + width},${y}],[${x + width},${y + height}],[${x},${y + height}]]);`
+      );
+      lines.push(`app.activeDocument.selection.fill(${varSuffix}Color);`);
+      lines.push(`app.activeDocument.selection.deselect();`);
+    }
+  }
 
   lines.push(`app.echoToOE('ok');`);
   return lines.join("\n");
