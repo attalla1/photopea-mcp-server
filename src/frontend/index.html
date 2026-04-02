@@ -344,6 +344,11 @@
         entry.appendChild(summaryEl);
         logEntries.appendChild(entry);
 
+        if (entryCount > 100) {
+          logEntries.removeChild(logEntries.firstChild);
+          entryCount--;
+        }
+
         // Auto-scroll to bottom
         logEntries.scrollTop = logEntries.scrollHeight;
       }
@@ -441,7 +446,7 @@
       function sendToPhotopea(payload) {
         var iframe = document.getElementById('photopea');
         if (iframe && iframe.contentWindow) {
-          iframe.contentWindow.postMessage(payload, '*');
+          iframe.contentWindow.postMessage(payload, 'https://www.photopea.com');
         }
       }
 
@@ -469,7 +474,7 @@
         // Photopea accepts an ArrayBuffer directly for file loading
         var iframe = document.getElementById('photopea');
         if (iframe && iframe.contentWindow) {
-          iframe.contentWindow.postMessage(bytes.buffer, '*');
+          iframe.contentWindow.postMessage(bytes.buffer, 'https://www.photopea.com');
         }
 
         // The load operation completes when Photopea sends "done"
@@ -483,6 +488,8 @@
       // Photopea -> page message handling (postMessage listener)
       // -----------------------------------------------------------------------
       window.addEventListener('message', function (event) {
+        var iframe = document.getElementById('photopea');
+        if (event.source !== iframe.contentWindow) return;
         var data = event.data;
 
         // ArrayBuffer = exported file data
