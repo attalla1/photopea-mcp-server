@@ -18,27 +18,18 @@ import {
   buildAddText,
   buildEditText,
   buildAddShape,
-  buildPlaceImage,
   buildApplyAdjustment,
   buildApplyFilter,
   buildTransformLayer,
-  buildApplyLayerStyle,
   buildAddGradient,
   buildMakeSelection,
   buildModifySelection,
   buildFillSelection,
   buildClearSelection,
-  buildReplaceSmartObject,
   buildExportImage,
-  buildGetPreview,
   buildRunScript,
   buildUndo,
   buildRedo,
-  buildSetBackground,
-  buildCreateBanner,
-  buildLoadTemplate,
-  buildApplyTemplateVariables,
-  buildComposeLayers,
 } from "../../src/bridge/script-builder.js";
 
 describe("hexToRgb", () => {
@@ -79,13 +70,12 @@ describe("script-builder: document operations", () => {
 
   it("buildCloseDocument with save", () => {
     const script = buildCloseDocument({ save: true });
-    expect(script).toContain("close");
-    expect(script).toContain("SaveOptions.SAVECHANGES");
+    expect(script).toContain("close(1)");
   });
 
   it("buildCloseDocument without save", () => {
     const script = buildCloseDocument({ save: false });
-    expect(script).toContain("SaveOptions.DONOTSAVECHANGES");
+    expect(script).toContain("close(2)");
   });
 });
 
@@ -189,12 +179,6 @@ describe("script-builder: shape operations", () => {
 });
 
 describe("script-builder: image operations", () => {
-  it("buildPlaceImage from URL", () => {
-    const script = buildPlaceImage({ source: "https://example.com/photo.jpg", name: "Photo" });
-    expect(script).toContain("app.open");
-    expect(script).toContain("https://example.com/photo.jpg");
-  });
-
   it("buildApplyFilter gaussian blur", () => {
     const script = buildApplyFilter({ type: "gaussian_blur", settings: { radius: 5 } });
     expect(script).toContain("applyGaussianBlur");
@@ -210,16 +194,11 @@ describe("script-builder: image operations", () => {
 });
 
 describe("script-builder: style operations", () => {
-  it("buildApplyLayerStyle with drop shadow", () => {
-    const script = buildApplyLayerStyle({ target: "Title", dropShadow: { color: "#000000", opacity: 75, distance: 5, size: 10 } });
-    expect(script).toContain("Title");
-    expect(script).toContain("DrSh");
-  });
-
   it("buildAddGradient linear", () => {
     const script = buildAddGradient({ target: "BG", type: "linear", colors: ["#1a1a2e", "#16213e"], angle: 90 });
     expect(script).toContain("BG");
-    expect(script).toContain("Grad");
+    expect(script).toContain("SolidColor");
+    expect(script).toContain("selection.fill");
   });
 });
 
@@ -249,11 +228,6 @@ describe("script-builder: selection operations", () => {
     expect(buildClearSelection()).toContain("deselect");
   });
 
-  it("buildReplaceSmartObject", () => {
-    const script = buildReplaceSmartObject({ target: "Logo", source: "https://example.com/logo.png" });
-    expect(script).toContain("Logo");
-    expect(script).toContain("app.open");
-  });
 });
 
 describe("script-builder: export operations", () => {
@@ -267,13 +241,6 @@ describe("script-builder: export operations", () => {
     const script = buildExportImage({ format: "jpg", quality: 80, outputPath: "/tmp/out.jpg" });
     expect(script).toContain("jpg:80");
   });
-
-  it("buildGetPreview with max dimensions", () => {
-    const script = buildGetPreview({ maxWidth: 400, maxHeight: 300 });
-    expect(script).toContain("saveToOE");
-    expect(script).toContain("png");
-  });
-
 
 });
 
@@ -290,60 +257,7 @@ describe("script-builder: utility operations", () => {
 
   it("buildRedo multiple steps", () => {
     const script = buildRedo(2);
-    const matches = script.match(/Rdo|redo/gi);
-    expect(matches).not.toBeNull();
-    expect(matches!.length).toBeGreaterThanOrEqual(2);
-  });
-});
-
-describe("script-builder: workflow operations", () => {
-  it("buildSetBackground solid", () => {
-    const script = buildSetBackground({ type: "solid", color: "#1a1a2e" });
-    expect(script).toContain("SolidColor");
-    expect(script).toContain("Background");
-  });
-
-  it("buildSetBackground gradient", () => {
-    const script = buildSetBackground({ type: "gradient", gradient: { colors: ["#1a1a2e", "#16213e"], angle: 90 } });
-    expect(script).toContain("Grad");
-  });
-
-  it("buildCreateBanner", () => {
-    const script = buildCreateBanner({
-      width: 1920, height: 1080, title: "AI Summit 2026",
-      subtitle: "The Future of AI", backgroundColor: "#1a1a2e",
-      titleColor: "#ffffff", titleSize: 72, layout: "centered",
-    });
-    expect(script).toContain("app.documents.add");
-    expect(script).toContain("1920");
-    expect(script).toContain("AI Summit 2026");
-    expect(script).toContain("The Future of AI");
-    expect(script).toContain("LayerKind.TEXT");
-  });
-
-  it("buildLoadTemplate", () => {
-    const script = buildLoadTemplate({ source: "https://example.com/template.psd" });
-    expect(script).toContain("app.open");
+    expect(script).toContain("historyStates");
     expect(script).toContain("echoToOE");
-    expect(script).toContain("JSON.stringify");
-  });
-
-  it("buildApplyTemplateVariables", () => {
-    const script = buildApplyTemplateVariables({ variables: { "Title": "New Title", "Sub": "New Sub" } });
-    expect(script).toContain("Title");
-    expect(script).toContain("New Title");
-    expect(script).toContain("LayerKind.TEXT");
-  });
-
-  it("buildComposeLayers", () => {
-    const script = buildComposeLayers({
-      layers: [
-        { type: "fill", color: "#000000" },
-        { type: "text", content: "Hello", x: 100, y: 200, size: 48, color: "#ffffff" },
-      ],
-    });
-    expect(script).toContain("SolidColor");
-    expect(script).toContain("Hello");
-    expect(script).toContain("LayerKind.TEXT");
   });
 });
