@@ -8,9 +8,8 @@ import {
   buildGetDocumentInfo,
   buildResizeDocument,
   buildCloseDocument,
-  escapeString,
 } from "../bridge/script-builder.js";
-import { readLocalFile, isUrl } from "../utils/file-io.js";
+import { readLocalFile, fetchUrlToBuffer, isUrl } from "../utils/file-io.js";
 
 export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge): void {
   // 1. photopea_create_document
@@ -37,20 +36,24 @@ export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge)
   // 2. photopea_open_file
   server.registerTool("photopea_open_file", {
     title: "Open File",
-    description: "Open an image file in Photopea from a URL or local path. Optionally open as a Smart Object.",
+    description: "Open an image file in Photopea from a URL or local path.",
     inputSchema: {
       source: z.string().describe("URL or local file path to open"),
-      asSmart: z.boolean().default(false).describe("Open as a Smart Object layer in the active document"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
-    const { source, asSmart } = params;
+    const { source } = params;
     bridge.sendActivity({ type: "activity", id: "", tool: "open_file", summary: `Open file: ${source}` });
 
     if (isUrl(source)) {
-      const mode = asSmart ? ", null, true" : "";
-      const script = `app.open('${escapeString(source)}'${mode});app.echoToOE('ok');`;
-      const result = await bridge.executeScript(script);
+      let fileData: Buffer;
+      try {
+        fileData = await fetchUrlToBuffer(source);
+      } catch (err) {
+        return { isError: true, content: [{ type: "text" as const, text: (err as Error).message }] };
+      }
+      const filename = source.split("/").pop() || "file";
+      const result = await bridge.loadFile(fileData, filename);
       if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to open URL" }] };
     } else {
       let fileData: Buffer;
@@ -85,7 +88,7 @@ export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge)
   // 4. photopea_resize_document
   server.registerTool("photopea_resize_document", {
     title: "Resize Document",
-    description: "Resize the active document canvas to new dimensions.",
+    description: "Resize the active document to new dimensions (resamples content to fit).",
     inputSchema: {
       width: z.number().positive().describe("New width in pixels"),
       height: z.number().positive().describe("New height in pixels"),

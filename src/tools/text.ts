@@ -72,9 +72,9 @@ export function registerTextTools(server: McpServer, bridge: PhotopeaBridge): vo
   // 18. photopea_add_shape
   server.registerTool("photopea_add_shape", {
     title: "Add Shape",
-    description: "Add a shape layer (rectangle, ellipse, line, or polygon) to the active document.",
+    description: "Add a shape layer (rectangle or ellipse) to the active document.",
     inputSchema: {
-      type: z.enum(["rectangle", "ellipse", "line", "polygon"]).describe("Shape type"),
+      type: z.enum(["rectangle", "ellipse"]).describe("Shape type"),
       bounds: z.object({
         x: z.number().describe("Left edge X position in pixels"),
         y: z.number().describe("Top edge Y position in pixels"),
@@ -84,7 +84,6 @@ export function registerTextTools(server: McpServer, bridge: PhotopeaBridge): vo
       fillColor: hexColor.optional(),
       strokeColor: hexColor.optional(),
       strokeWidth: z.number().positive().optional().describe("Stroke width in pixels"),
-      cornerRadius: z.number().min(0).optional().describe("Corner radius for rectangles"),
       name: z.string().optional().describe("Name for the shape layer"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

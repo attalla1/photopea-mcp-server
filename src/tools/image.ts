@@ -3,20 +3,17 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { PhotopeaBridge } from "../bridge/websocket-server.js";
 import {
-  buildPlaceImage,
   buildApplyAdjustment,
   buildApplyFilter,
   buildTransformLayer,
-  buildApplyLayerStyle,
   buildAddGradient,
   buildMakeSelection,
   buildModifySelection,
   buildFillSelection,
   buildClearSelection,
-  buildReplaceSmartObject,
   escapeString,
 } from "../bridge/script-builder.js";
-import { readLocalFile, isUrl } from "../utils/file-io.js";
+import { readLocalFile, fetchUrlToBuffer, isUrl } from "../utils/file-io.js";
 
 const layerTarget = z.union([z.string(), z.number()]).describe("Layer name (string) or index (number)");
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/).describe("Color as hex string (e.g. #ff0000)");
@@ -39,39 +36,58 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
     const { source } = params;
     bridge.sendActivity({ type: "activity", id: "", tool: "place_image", summary: `Place image: ${source}` });
 
-    if (isUrl(source)) {
-      const script = buildPlaceImage(params);
-      const result = await bridge.executeScript(script);
-      if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to place image" }] };
-    } else {
-      let fileData: Buffer;
-      try {
-        fileData = await readLocalFile(source);
-      } catch (err) {
-        return { isError: true, content: [{ type: "text" as const, text: (err as Error).message }] };
-      }
-      const filename = source.split("/").pop() || "image";
-      const result = await bridge.loadFile(fileData, filename);
-      if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to load local image" }] };
+    // Step 1: Fetch the file data (server-side for both URLs and local files)
+    // This avoids Photopea's async app.open(url) which sends "done" before the file loads.
+    let fileData: Buffer;
+    try {
+      fileData = isUrl(source) ? await fetchUrlToBuffer(source) : await readLocalFile(source);
+    } catch (err) {
+      return { isError: true, content: [{ type: "text" as const, text: (err as Error).message }] };
+    }
 
-      // Apply positioning/sizing/naming if any were specified
-      if (params.x !== undefined || params.y !== undefined || params.width || params.height || params.name) {
-        const posLines: string[] = [];
-        posLines.push(`var _pl = app.activeDocument.activeLayer;`);
-        if (params.name) posLines.push(`_pl.name = '${escapeString(params.name)}';`);
+    // Step 2: Send ArrayBuffer to Photopea (opens as new document synchronously)
+    const filename = source.split("/").pop() || "image";
+    const loadResult = await bridge.loadFile(fileData, filename);
+    if (!loadResult.success) return { isError: true, content: [{ type: "text" as const, text: loadResult.error || "Failed to load image" }] };
+
+    // Step 3: Duplicate layer into target doc, close source, position in target
+    {
+      const lines = [
+        `var _srcDoc = app.activeDocument;`,
+        // Copy merged preserves transparency (unlike flatten/mergeVisible)
+        `_srcDoc.selection.selectAll();`,
+        `_srcDoc.selection.copy(true);`,
+        `_srcDoc.close(2);`,
+        `app.activeDocument.paste();`,
+      ];
+
+      const safeName = params.name ? escapeString(params.name) : "";
+      // Helper to extract numeric value from bounds (may be UnitValue objects or raw numbers)
+      lines.push(`function _bv(v) { return typeof v === 'object' && v !== null ? v.value || v.L || 0 : v; }`);
+      if (safeName) lines.push(`app.activeDocument.activeLayer.name = '${safeName}';`);
+      if (params.width || params.height) {
+        lines.push(`var _b = app.activeDocument.activeLayer.bounds;`);
+        lines.push(`var _cw = _bv(_b[2]) - _bv(_b[0]);`);
+        lines.push(`var _ch = _bv(_b[3]) - _bv(_b[1]);`);
         if (params.width && params.height) {
-          posLines.push(`var _b = _pl.bounds;`);
-          posLines.push(`var _cw = _b[2].as('px') - _b[0].as('px');`);
-          posLines.push(`var _ch = _b[3].as('px') - _b[1].as('px');`);
-          posLines.push(`_pl.resize(${params.width} / _cw * 100, ${params.height} / _ch * 100);`);
+          // Fit within box, preserving aspect ratio
+          lines.push(`var _scale = Math.min(${params.width} / _cw, ${params.height} / _ch);`);
+        } else if (params.width) {
+          lines.push(`var _scale = ${params.width} / _cw;`);
+        } else {
+          lines.push(`var _scale = ${params.height} / _ch;`);
         }
-        if (params.x !== undefined && params.y !== undefined) {
-          posLines.push(`var _b2 = _pl.bounds;`);
-          posLines.push(`_pl.translate(${params.x} - _b2[0].as('px'), ${params.y} - _b2[1].as('px'));`);
-        }
-        posLines.push(`app.echoToOE('ok');`);
-        await bridge.executeScript(posLines.join("\n"));
+        lines.push(`if (_cw > 0 && _ch > 0) { app.activeDocument.activeLayer.resize(_scale * 100, _scale * 100); }`);
       }
+      if (params.x !== undefined || params.y !== undefined) {
+        const xPos = params.x ?? 0;
+        const yPos = params.y ?? 0;
+        lines.push(`var _b2 = app.activeDocument.activeLayer.bounds;`);
+        lines.push(`app.activeDocument.activeLayer.translate(${xPos} - _bv(_b2[0]), ${yPos} - _bv(_b2[1]));`);
+      }
+      lines.push(`app.echoToOE('ok');`);
+      const mergeResult = await bridge.executeScript(lines.join("\n"));
+      if (!mergeResult.success) return { isError: true, content: [{ type: "text" as const, text: mergeResult.error || "Failed to place image into document" }] };
     }
 
     return { content: [{ type: "text" as const, text: `Image placed: ${source}` }] };
@@ -132,67 +148,15 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
     return { content: [{ type: "text" as const, text: `Layer transformed: ${params.target}` }] };
   });
 
-  // 23. photopea_apply_layer_style
-  server.registerTool("photopea_apply_layer_style", {
-    title: "Apply Layer Style",
-    description: "Apply layer effects (drop shadow, stroke, outer glow, inner glow, color overlay, gradient overlay) to a layer.",
-    inputSchema: {
-      target: layerTarget,
-      dropShadow: z.object({
-        color: hexColor.optional(),
-        opacity: z.number().min(0).max(100).optional().describe("Shadow opacity (0-100)"),
-        angle: z.number().optional().describe("Shadow angle in degrees"),
-        distance: z.number().min(0).optional().describe("Shadow distance in pixels"),
-        spread: z.number().min(0).optional().describe("Shadow spread in pixels"),
-        size: z.number().min(0).optional().describe("Shadow size/blur in pixels"),
-      }).optional().describe("Drop shadow effect"),
-      stroke: z.object({
-        color: hexColor.optional(),
-        size: z.number().positive().optional().describe("Stroke size in pixels"),
-        position: z.enum(["outside", "inside", "center"]).optional().describe("Stroke position"),
-        opacity: z.number().min(0).max(100).optional().describe("Stroke opacity (0-100)"),
-      }).optional().describe("Stroke effect"),
-      outerGlow: z.object({
-        color: hexColor.optional(),
-        opacity: z.number().min(0).max(100).optional().describe("Glow opacity (0-100)"),
-        size: z.number().min(0).optional().describe("Glow size in pixels"),
-        spread: z.number().min(0).optional().describe("Glow spread"),
-      }).optional().describe("Outer glow effect"),
-      innerGlow: z.object({
-        color: hexColor.optional(),
-        opacity: z.number().min(0).max(100).optional().describe("Glow opacity (0-100)"),
-        size: z.number().min(0).optional().describe("Glow size in pixels"),
-        spread: z.number().min(0).optional().describe("Glow spread"),
-      }).optional().describe("Inner glow effect"),
-      colorOverlay: z.object({
-        color: hexColor,
-        opacity: z.number().min(0).max(100).optional().describe("Overlay opacity (0-100)"),
-      }).optional().describe("Color overlay effect"),
-      gradientOverlay: z.object({
-        colors: z.array(hexColor).describe("Gradient color stops as hex values"),
-        angle: z.number().optional().describe("Gradient angle in degrees"),
-        opacity: z.number().min(0).max(100).optional().describe("Overlay opacity (0-100)"),
-      }).optional().describe("Gradient overlay effect"),
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, async (params) => {
-    const script = buildApplyLayerStyle(params);
-    bridge.sendActivity({ type: "activity", id: "", tool: "apply_layer_style", summary: `Apply layer style to: ${params.target}` });
-    const result = await bridge.executeScript(script);
-    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to apply layer style" }] };
-    return { content: [{ type: "text" as const, text: `Layer style applied to: ${params.target}` }] };
-  });
-
   // 24. photopea_add_gradient
   server.registerTool("photopea_add_gradient", {
     title: "Add Gradient",
-    description: "Apply a gradient fill to a layer (linear, radial, or angular).",
+    description: "Apply a linear gradient fill to a layer.",
     inputSchema: {
       target: layerTarget,
-      type: z.enum(["linear", "radial", "angular"]).describe("Gradient type"),
+      type: z.enum(["linear"]).describe("Gradient type"),
       colors: z.array(hexColor).min(2).describe("Array of hex color stops (minimum 2)"),
       angle: z.number().optional().describe("Gradient angle in degrees"),
-      scale: z.number().positive().optional().describe("Gradient scale (percentage)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -214,11 +178,14 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
         y: z.number().describe("Top edge Y"),
         width: z.number().positive().describe("Selection width"),
         height: z.number().positive().describe("Selection height"),
-      }).optional().describe("Selection bounds (required for rect and ellipse types)"),
+      }).optional().describe("Selection bounds (ignored for 'all' type)"),
       feather: z.number().min(0).optional().describe("Feather radius in pixels"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
+    if (params.type !== "all" && !params.bounds) {
+      return { isError: true, content: [{ type: "text" as const, text: "bounds is required for rect and ellipse selection types" }] };
+    }
     const script = buildMakeSelection(params);
     bridge.sendActivity({ type: "activity", id: "", tool: "make_selection", summary: `Make ${params.type} selection` });
     const result = await bridge.executeScript(script);
@@ -275,20 +242,4 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
     return { content: [{ type: "text" as const, text: "Selection cleared" }] };
   });
 
-  // 29. photopea_replace_smart_object
-  server.registerTool("photopea_replace_smart_object", {
-    title: "Replace Smart Object",
-    description: "Replace the contents of a Smart Object layer with a new image source.",
-    inputSchema: {
-      target: layerTarget,
-      source: z.string().describe("URL or local path of the replacement image"),
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, async (params) => {
-    const script = buildReplaceSmartObject(params);
-    bridge.sendActivity({ type: "activity", id: "", tool: "replace_smart_object", summary: `Replace smart object: ${params.target}` });
-    const result = await bridge.executeScript(script);
-    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to replace smart object" }] };
-    return { content: [{ type: "text" as const, text: `Smart object replaced: ${params.target}` }] };
-  });
 }

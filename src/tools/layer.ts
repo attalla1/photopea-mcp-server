@@ -14,6 +14,7 @@ import {
   buildReorderLayer,
   buildGroupLayers,
   buildGetLayers,
+  escapeString,
 } from "../bridge/script-builder.js";
 
 const layerTarget = z.union([z.string(), z.number()]).describe("Layer name (string) or index (number)");
@@ -40,10 +41,10 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
   // 7. photopea_add_fill_layer
   server.registerTool("photopea_add_fill_layer", {
     title: "Add Fill Layer",
-    description: "Add a solid color, gradient, or pattern fill layer.",
+    description: "Add a solid color fill layer.",
     inputSchema: {
-      type: z.enum(["solid", "gradient", "pattern"]).describe("Fill type: solid, gradient, or pattern"),
-      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Fill color as hex (for solid fill)"),
+      type: z.enum(["solid"]).describe("Fill type: solid"),
+      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).describe("Fill color as hex"),
       name: z.string().optional().describe("Name for the fill layer"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -175,6 +176,29 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
     const result = await bridge.executeScript(script);
     if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to group layers" }] };
     return { content: [{ type: "text" as const, text: `Layers grouped${params.groupName ? `: ${params.groupName}` : ""}` }] };
+  });
+
+  // photopea_ungroup_layers
+  server.registerTool("photopea_ungroup_layers", {
+    title: "Ungroup Layers",
+    description: "Ungroup a layer group, moving all its children to the document root.",
+    inputSchema: {
+      target: z.string().describe("Name of the layer group to ungroup"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, async (params) => {
+    const safe = escapeString(params.target);
+    const script = [
+      `var _d = app.activeDocument;`,
+      `var _g = _d.layerSets.getByName('${safe}');`,
+      `while (_g.layers.length > 0) { _g.layers[0].move(_d.layers[_d.layers.length - 1], ElementPlacement.PLACEBEFORE); }`,
+      `_g.remove();`,
+      `app.echoToOE('ok');`,
+    ].join("\n");
+    bridge.sendActivity({ type: "activity", id: "", tool: "ungroup_layers", summary: `Ungroup: ${params.target}` });
+    const result = await bridge.executeScript(script);
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to ungroup layers" }] };
+    return { content: [{ type: "text" as const, text: `Group ungrouped: ${params.target}` }] };
   });
 
   // 15. photopea_get_layers
