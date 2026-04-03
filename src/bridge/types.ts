@@ -108,9 +108,8 @@ export interface AddLayerParams {
 }
 
 export interface AddFillLayerParams {
-  type: "solid" | "gradient" | "pattern";
+  type: "solid";
   color?: string;
-  gradient?: GradientSpec;
   name?: string;
 }
 
@@ -150,12 +149,11 @@ export interface GroupLayersParams {
 }
 
 export interface AddShapeParams {
-  type: "rectangle" | "ellipse" | "line" | "polygon";
+  type: "rectangle" | "ellipse";
   bounds: { x: number; y: number; width: number; height: number };
   fillColor?: string;
   strokeColor?: string;
   strokeWidth?: number;
-  cornerRadius?: number;
   name?: string;
 }
 
@@ -213,45 +211,11 @@ export interface TransformLayerParams {
   flipV?: boolean;
 }
 
-export interface DropShadowSpec {
-  color?: string;
-  opacity?: number;
-  angle?: number;
-  distance?: number;
-  spread?: number;
-  size?: number;
-}
-
-export interface StrokeSpec {
-  color?: string;
-  size?: number;
-  position?: "outside" | "inside" | "center";
-  opacity?: number;
-}
-
-export interface GlowSpec {
-  color?: string;
-  opacity?: number;
-  size?: number;
-  spread?: number;
-}
-
-export interface ApplyLayerStyleParams {
-  target: string | number;
-  dropShadow?: DropShadowSpec;
-  stroke?: StrokeSpec;
-  outerGlow?: GlowSpec;
-  innerGlow?: GlowSpec;
-  colorOverlay?: { color: string; opacity?: number };
-  gradientOverlay?: { colors: string[]; angle?: number; opacity?: number };
-}
-
 export interface AddGradientParams {
   target: string | number;
-  type: "linear" | "radial" | "angular";
+  type: "linear";
   colors: string[];
   angle?: number;
-  scale?: number;
 }
 
 export interface MakeSelectionParams {
@@ -280,67 +244,6 @@ export interface ExportImageParams {
   format: "png" | "jpg" | "webp" | "psd" | "svg";
   quality?: number;
   outputPath: string;
-}
-
-export interface GetPreviewParams {
-  maxWidth?: number;
-  maxHeight?: number;
-}
-
-export interface BatchExportEntry {
-  format: "png" | "jpg" | "webp" | "psd" | "svg";
-  quality?: number;
-  outputPath: string;
-  width?: number;
-  height?: number;
-}
-
-export interface BatchExportParams {
-  exports: BatchExportEntry[];
-}
-
-export interface SetBackgroundParams {
-  type: "solid" | "gradient" | "image";
-  color?: string;
-  gradient?: GradientSpec;
-  imageSource?: string;
-  blur?: number;
-}
-
-export interface CreateBannerParams {
-  width: number;
-  height: number;
-  title: string;
-  subtitle?: string;
-  backgroundColor?: string;
-  accentColor?: string;
-  titleFont?: string;
-  titleSize?: number;
-  titleColor?: string;
-  backgroundImage?: string;
-  layout?: "centered" | "left" | "split";
-  outputPath?: string;
-}
-
-export interface LoadTemplateParams {
-  source: string;
-}
-
-export interface TemplateVariable {
-  [layerName: string]: string;
-}
-
-export interface ApplyTemplateVariablesParams {
-  variables: TemplateVariable;
-}
-
-export interface ComposeLayerEntry {
-  type: "text" | "image" | "shape" | "fill";
-  [key: string]: unknown;
-}
-
-export interface ComposeLayersParams {
-  layers: ComposeLayerEntry[];
 }
 
 // --- Layer Info Types (returned by get_layers) ---
