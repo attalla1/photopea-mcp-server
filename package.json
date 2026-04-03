@@ -2,15 +2,39 @@
   "name": "photopea-mcp-server",
   "version": "0.1.0",
   "description": "MCP server for AI-driven image editing with Photopea",
+  "author": "attalla1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/attalla1/photopea-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/attalla1/photopea-mcp-server/issues"
+  },
+  "homepage": "https://github.com/attalla1/photopea-mcp-server#readme",
+  "keywords": [
+    "modelcontextprotocol",
+    "mcp",
+    "photopea",
+    "image-editing",
+    "ai"
+  ],
   "type": "module",
   "main": "dist/index.js",
+  "files": [
+    "dist",
+    "src/frontend",
+    "LICENSE",
+    "README.md"
+  ],
   "bin": {
     "photopea-mcp-server": "dist/index.js"
   },
   "scripts": {
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && chmod 755 dist/index.js",
+    "prepublishOnly": "npm run build",
     "clean": "rm -rf dist",
     "test": "vitest run",
     "test:watch": "vitest",
