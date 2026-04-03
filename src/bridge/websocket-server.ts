@@ -91,10 +91,13 @@ export class PhotopeaBridge {
   waitForReady(): Promise<void> {
     if (this.isReady()) return Promise.resolve();
     return new Promise<void>((resolve, reject) => {
+      let settled = false;
       const timer = setTimeout(() => {
+        settled = true;
         reject(new Error(`Photopea did not become ready within ${READY_TIMEOUT_MS / 1000}s. Please open http://127.0.0.1:${this.port} and wait for Photopea to load.`));
       }, READY_TIMEOUT_MS);
       const check = () => {
+        if (settled) return;
         if (this.isReady()) {
           clearTimeout(timer);
           resolve();
@@ -171,14 +174,15 @@ export class PhotopeaBridge {
 
       const timer = setTimeout(() => {
         this.pendingScripts.delete(id);
+        const wasActive = this.queue[0]?.id === id;
         this.queue = this.queue.filter((r) => r.id !== id);
-        this.processing = false;
+        if (wasActive) this.processing = false;
         resolve({
           success: false,
           data: null,
           error: `Script execution timed out after ${timeoutMs / 1000}s`,
         });
-        this.processNext();
+        if (wasActive) this.processNext();
       }, timeoutMs);
 
       const pending: PendingRequest = { id, resolve, reject, expectFiles, timer };
@@ -214,14 +218,15 @@ export class PhotopeaBridge {
 
       const timer = setTimeout(() => {
         this.pendingLoads.delete(id);
+        const wasActive = this.queue[0]?.id === id;
         this.queue = this.queue.filter((r) => r.id !== id);
-        this.processing = false;
+        if (wasActive) this.processing = false;
         resolve({
           success: false,
           data: null,
           error: `loadFile timed out after ${DEFAULT_TIMEOUT_MS / 1000}s`,
         });
-        this.processNext();
+        if (wasActive) this.processNext();
       }, DEFAULT_TIMEOUT_MS);
 
       // Store the serialized load message so processNext can send it when the queue is free
