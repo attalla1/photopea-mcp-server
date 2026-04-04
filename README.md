@@ -16,21 +16,24 @@
 
 ## How It Works
 
-```
-AI Assistant <-- stdio --> MCP Server <-- WebSocket --> Browser <-- postMessage --> Photopea
+```mermaid
+graph LR
+    A[AI Assistant] <-->|stdio| B[MCP Server]
+    B <-->|WebSocket| C[Browser]
+    C <-->|postMessage| D[Photopea]
 ```
 
-When the MCP server starts, it automatically opens a browser window running the Photopea editor. Your AI assistant sends editing commands through the MCP protocol, which the server translates into Photopea JavaScript API calls and executes via a WebSocket bridge to the browser.
+Your AI assistant sends editing commands through the MCP protocol. The server translates these into Photopea JavaScript API calls and executes them via a WebSocket bridge to the browser.
 
-**Note:** A browser window will open automatically each time the server starts. This is expected -- Photopea runs entirely in the browser and the server needs it to perform image editing operations.
+**Note:** A browser window will open automatically on the first tool call. This is expected -- Photopea runs entirely in the browser and the server needs it to perform image editing operations.
 
 ## Quick Start
 
 ```bash
-claude mcp add photopea -- npx -y photopea-mcp-server
+claude mcp add -s user photopea -- npx -y photopea-mcp-server
 ```
 
-Then start a new Claude Code session and ask it to edit images. The Photopea editor will open in your browser automatically.
+Then start a new Claude Code session and ask it to edit images. The Photopea editor will open in your browser automatically on the first tool call.
 
 ## Installation
 
@@ -39,14 +42,14 @@ Then start a new Claude Code session and ask it to edit images. The Photopea edi
 **npx (recommended):**
 
 ```bash
-claude mcp add photopea -- npx -y photopea-mcp-server
+claude mcp add -s user photopea -- npx -y photopea-mcp-server
 ```
 
 **Global install:**
 
 ```bash
 npm install -g photopea-mcp-server
-claude mcp add photopea -- photopea-mcp-server
+claude mcp add -s user photopea -- photopea-mcp-server
 ```
 
 ### Claude Desktop
@@ -118,7 +121,7 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 | `photopea_create_document` | Create a new document with specified dimensions and settings |
 | `photopea_open_file` | Open an image from a URL or local file path |
 | `photopea_get_document_info` | Get active document info (name, dimensions, resolution, color mode) |
-| `photopea_resize_document` | Resize the active document canvas |
+| `photopea_resize_document` | Resize the active document (resamples content to fit) |
 | `photopea_close_document` | Close the active document |
 
 ### Layer (11 tools)
@@ -126,7 +129,7 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 | Tool | Description |
 |------|-------------|
 | `photopea_add_layer` | Add a new empty art layer |
-| `photopea_add_fill_layer` | Add a solid color, gradient, or pattern fill layer |
+| `photopea_add_fill_layer` | Add a solid color fill layer |
 | `photopea_delete_layer` | Delete a layer by name or index |
 | `photopea_select_layer` | Make a layer active by name or index |
 | `photopea_set_layer_properties` | Set opacity, blend mode, visibility, name, or lock state |
@@ -143,9 +146,9 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 |------|-------------|
 | `photopea_add_text` | Add a text layer at specified coordinates |
 | `photopea_edit_text` | Edit content or style of an existing text layer |
-| `photopea_add_shape` | Add a shape (rectangle, ellipse, line, polygon) |
+| `photopea_add_shape` | Add a shape (rectangle or ellipse) |
 
-### Image & Effects (10 tools)
+### Image & Effects (9 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -153,12 +156,11 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 | `photopea_apply_adjustment` | Apply brightness/contrast, hue/saturation, levels, or curves |
 | `photopea_apply_filter` | Apply gaussian blur, sharpen, unsharp mask, noise, or motion blur |
 | `photopea_transform_layer` | Scale, rotate, or flip a layer |
-| `photopea_add_gradient` | Apply a gradient fill (linear, radial, angular) |
+| `photopea_add_gradient` | Apply a linear gradient fill |
 | `photopea_make_selection` | Create a rectangular, elliptical, or full selection |
 | `photopea_modify_selection` | Expand, contract, feather, or invert a selection |
 | `photopea_fill_selection` | Fill the current selection with a color |
 | `photopea_clear_selection` | Deselect the current selection |
-| `photopea_replace_smart_object` | Replace Smart Object contents with a new image |
 
 ### Export & Utility (4 tools)
 
@@ -207,7 +209,7 @@ npm run build
 
 The server has four main components:
 
-**MCP Server** (`src/server.ts`) -- Registers all 33 tools with the MCP SDK and connects via stdio transport.
+**MCP Server** (`src/server.ts`) -- Registers all 32 tools with the MCP SDK and connects via stdio transport.
 
 **WebSocket Bridge** (`src/bridge/websocket-server.ts`) -- Manages the connection between the MCP server and the browser. Queues script execution requests and handles responses with timeouts.
 
@@ -227,7 +229,7 @@ src/
     document.ts         # Document operations (5 tools)
     layer.ts            # Layer operations (11 tools)
     text.ts             # Text and shape operations (3 tools)
-    image.ts            # Image, adjustment, filter operations (10 tools)
+    image.ts            # Image, adjustment, filter operations (9 tools)
     export.ts           # Export and utility operations (4 tools)
   utils/
     file-io.ts          # Local file read/write, URL fetching
@@ -235,6 +237,19 @@ src/
   frontend/
     index.html          # Browser UI with Photopea iframe
 ```
+
+## Security
+
+- The MCP server binds to `127.0.0.1` (localhost only) and is not accessible from the network.
+- The `photopea_run_script` tool executes arbitrary JavaScript inside Photopea's sandboxed iframe. It is marked as destructive and requires user approval in MCP clients that support tool annotations.
+- File operations (`open_file`, `export_image`, `place_image`) read and write files with the same permissions as the user running the server.
+
+## Known Limitations
+
+- Heavy scripts (e.g., gradients with many color steps) may cause the Photopea browser UI to become unresponsive. The operations still complete successfully in the background and exports will work as expected.
+- Refreshing the browser page will discard all unsaved work. Export your documents before refreshing.
+- Only one browser tab should be open at a time. Multiple tabs will conflict over the WebSocket connection.
+- The `reorder_layer` tool may cause the Photopea UI to become unresponsive. To avoid this, create layers in the desired order rather than reordering after creation.
 
 ## Requirements
 

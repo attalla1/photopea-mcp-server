@@ -6,7 +6,6 @@ import { registerLayerTools } from "./tools/layer.js";
 import { registerTextTools } from "./tools/text.js";
 import { registerImageTools } from "./tools/image.js";
 import { registerExportTools } from "./tools/export.js";
-import { registerWorkflowTools } from "./tools/workflows.js";
 
 export function createServer(bridge: PhotopeaBridge): McpServer {
   const server = new McpServer({ name: "photopea-mcp-server", version: "0.1.0" });
@@ -15,6 +14,5 @@ export function createServer(bridge: PhotopeaBridge): McpServer {
   registerTextTools(server, bridge);
   registerImageTools(server, bridge);
   registerExportTools(server, bridge);
-  registerWorkflowTools(server, bridge);
   return server;
 }

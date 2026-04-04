@@ -283,7 +283,7 @@ describe("script-builder: style operations", () => {
     expect(script).toContain("SolidColor");
     expect(script).toContain("selection.fill");
     expect(script).toContain("_gc0"); // first gradient step variable
-    expect(script).toContain("_gc63"); // last gradient step variable (64 steps, 0-indexed)
+    expect(script).toContain("_gc15"); // last gradient step variable (16 steps, 0-indexed)
   });
 });
 

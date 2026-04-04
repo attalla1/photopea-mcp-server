@@ -675,8 +675,8 @@ export function buildAddGradient(params: AddGradientParams): string {
   lines.push(`app.activeDocument.selection.selectAll();`);
 
   // Simulate gradient by filling horizontal or vertical bands with interpolated colors.
-  // For two colors this produces a smooth-looking stepped gradient.
-  const steps = 64;
+  // Fewer steps = faster execution; more steps = smoother result.
+  const steps = 16;
   const radians = (angle * Math.PI) / 180;
   const isVertical = Math.abs(Math.cos(radians)) > Math.abs(Math.sin(radians));
 
