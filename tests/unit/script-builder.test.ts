@@ -15,6 +15,7 @@ import {
   buildGroupLayers,
   buildGetLayers,
   hexToRgb,
+  escapeString,
   buildAddText,
   buildEditText,
   buildAddShape,
@@ -36,6 +37,40 @@ describe("hexToRgb", () => {
   it("converts hex to RGB", () => {
     expect(hexToRgb("#ff0000")).toEqual({ r: 255, g: 0, b: 0 });
     expect(hexToRgb("#1a1a2e")).toEqual({ r: 26, g: 26, b: 46 });
+  });
+
+  it("hexToRgb with black", () => {
+    expect(hexToRgb("#000000")).toEqual({ r: 0, g: 0, b: 0 });
+  });
+  it("hexToRgb with white", () => {
+    expect(hexToRgb("#ffffff")).toEqual({ r: 255, g: 255, b: 255 });
+  });
+  it("hexToRgb with mixed case", () => {
+    expect(hexToRgb("#FfAa00")).toEqual({ r: 255, g: 170, b: 0 });
+  });
+});
+
+describe("escapeString", () => {
+  it("escapes backslashes", () => {
+    expect(escapeString("path\\to\\file")).toBe("path\\\\to\\\\file");
+  });
+  it("escapes single quotes", () => {
+    expect(escapeString("it's a test")).toBe("it\\'s a test");
+  });
+  it("escapes newlines", () => {
+    expect(escapeString("line1\nline2")).toBe("line1\\nline2");
+  });
+  it("escapes carriage returns", () => {
+    expect(escapeString("line1\rline2")).toBe("line1\\rline2");
+  });
+  it("handles combined special characters", () => {
+    expect(escapeString("it's a\nnew\\path")).toBe("it\\'s a\\nnew\\\\path");
+  });
+  it("returns empty string unchanged", () => {
+    expect(escapeString("")).toBe("");
+  });
+  it("returns plain string unchanged", () => {
+    expect(escapeString("hello world")).toBe("hello world");
   });
 });
 
@@ -142,6 +177,9 @@ describe("script-builder: layer operations", () => {
     const script = buildGroupLayers({ layers: ["Title", "Subtitle"], groupName: "Text Group" });
     expect(script).toContain("layerSets.add()");
     expect(script).toContain("Text Group");
+    expect(script).toContain("Title");
+    expect(script).toContain("Subtitle");
+    expect(script).toContain("move");
   });
 
   it("buildGetLayers returns JSON tree", () => {
@@ -159,6 +197,10 @@ describe("script-builder: text operations", () => {
     expect(script).toContain("Arial");
     expect(script).toContain("48");
     expect(script).toContain("Justification.CENTER");
+    expect(script).toContain("position");
+    expect(script).toContain("100");
+    expect(script).toContain("200");
+    expect(script).toContain("fauxBold");
   });
 
   it("buildEditText modifies existing layer", () => {
@@ -176,6 +218,16 @@ describe("script-builder: shape operations", () => {
     expect(script).toContain("SolidColor");
     expect(script).toContain("fill");
   });
+
+  it("buildAddShape ellipse", () => {
+    const script = buildAddShape({ type: "ellipse", bounds: { x: 50, y: 50, width: 100, height: 80 }, fillColor: "#ff0000" });
+    expect(script).toContain("selectEllipse");
+    expect(script).toContain("50");
+    expect(script).toContain("150"); // x + width
+    expect(script).toContain("130"); // y + height
+    expect(script).toContain("SolidColor");
+    expect(script).toContain("fill");
+  });
 });
 
 describe("script-builder: image operations", () => {
@@ -190,6 +242,37 @@ describe("script-builder: image operations", () => {
     expect(script).toContain("resize");
     expect(script).toContain("rotate");
     expect(script).toContain("45");
+    expect(script).toContain("150");
+  });
+
+  it("buildApplyAdjustment brightness", () => {
+    const script = buildApplyAdjustment({ type: "brightness", settings: { brightness: 20, contrast: 10 } });
+    expect(script).toContain("adjustBrightnessContrast");
+    expect(script).toContain("20");
+    expect(script).toContain("10");
+    expect(script).toContain("echoToOE");
+  });
+
+  it("buildApplyAdjustment hue_sat", () => {
+    const script = buildApplyAdjustment({ type: "hue_sat", settings: { hue: 15, saturation: 30, lightness: -5 } });
+    expect(script).toContain("adjustColorBalance");
+    expect(script).toContain("15");
+    expect(script).toContain("30");
+    expect(script).toContain("-5");
+  });
+
+  it("buildApplyAdjustment levels", () => {
+    const script = buildApplyAdjustment({ type: "levels", settings: { inputMin: 10, inputMax: 240, gamma: 1.2 } });
+    expect(script).toContain("adjustLevels");
+    expect(script).toContain("10");
+    expect(script).toContain("240");
+    expect(script).toContain("1.2");
+  });
+
+  it("buildApplyAdjustment curves", () => {
+    const script = buildApplyAdjustment({ type: "curves", settings: { points: "[[0,0],[128,180],[255,255]]" } });
+    expect(script).toContain("adjustCurves");
+    expect(script).toContain("[[0,0],[128,180],[255,255]]");
   });
 });
 
@@ -199,6 +282,8 @@ describe("script-builder: style operations", () => {
     expect(script).toContain("BG");
     expect(script).toContain("SolidColor");
     expect(script).toContain("selection.fill");
+    expect(script).toContain("_gc0"); // first gradient step variable
+    expect(script).toContain("_gc63"); // last gradient step variable (64 steps, 0-indexed)
   });
 });
 
@@ -209,7 +294,11 @@ describe("script-builder: selection operations", () => {
 
   it("buildMakeSelection rect", () => {
     const script = buildMakeSelection({ type: "rect", bounds: { x: 10, y: 10, width: 200, height: 100 } });
-    expect(script).toContain("select");
+    expect(script).toContain("selection.select(");
+    expect(script).toContain("10");
+    expect(script).toContain("210"); // x + width
+    expect(script).toContain("110"); // y + height
+    expect(script).toContain("echoToOE");
   });
 
   it("buildModifySelection expand", () => {
@@ -253,11 +342,13 @@ describe("script-builder: utility operations", () => {
     const script = buildUndo(3);
     expect(script).toContain("historyStates");
     expect(script).toContain("3");
+    expect(script).toContain("echoToOE");
   });
 
   it("buildRedo multiple steps", () => {
     const script = buildRedo(2);
     expect(script).toContain("historyStates");
     expect(script).toContain("echoToOE");
+    expect(script).toContain("2");
   });
 });
