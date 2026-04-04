@@ -38,6 +38,26 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
     return { content: [{ type: "text" as const, text: `Image exported to: ${params.outputPath}` }] };
   });
 
+  // photopea_list_fonts
+  server.registerTool("photopea_list_fonts", {
+    title: "List Fonts",
+    description: "List available fonts in Photopea. Returns font PostScript names that can be used with add_text and edit_text.",
+    inputSchema: {
+      search: z.string().optional().describe("Optional search string to filter fonts by name"),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async (params) => {
+    const search = params.search?.toLowerCase();
+    const script = search
+      ? `var r=[];for(var i=0;i<app.fonts.length;i++){var n=app.fonts[i].postScriptName;if(n.toLowerCase().indexOf('${search}')>=0)r.push(n);}app.echoToOE(JSON.stringify(r));`
+      : `var r=[];for(var i=0;i<app.fonts.length;i++){r.push(app.fonts[i].postScriptName);}app.echoToOE(JSON.stringify(r));`;
+    bridge.sendActivity({ type: "activity", id: "", tool: "list_fonts", summary: `List fonts${search ? `: ${search}` : ""}` });
+    const result = await bridge.executeScript(script);
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to list fonts" }] };
+    const data = (result as import("../bridge/types.js").BridgeResult).data || "[]";
+    return { content: [{ type: "text" as const, text: data }] };
+  });
+
   // 33. photopea_run_script
   server.registerTool("photopea_run_script", {
     title: "Run Script",
