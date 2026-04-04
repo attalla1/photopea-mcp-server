@@ -5,7 +5,7 @@
 <h1 align="center">Photopea MCP Server</h1>
 
 <p align="center">
-  AI-powered image editing through <a href="https://www.photopea.com">Photopea</a>, controlled by your agent via the <a href="https://modelcontextprotocol.io">Model Context Protocol</a>.
+  Design posters, edit photos, and manipulate images directly from your terminal. Powered by <a href="https://www.photopea.com">Photopea</a> -- a free, browser-based alternative to Photoshop -- connected to your AI agent via <a href="https://modelcontextprotocol.io">MCP</a>.
 </p>
 
 <p align="center">
