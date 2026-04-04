@@ -44,6 +44,34 @@
       user-select: none;
     }
 
+    #github-star {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: #333;
+      border: 1px solid #555;
+      border-radius: 6px;
+      color: #ccc;
+      font-size: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    #github-star:hover {
+      background: #444;
+      border-color: #777;
+      color: #fff;
+    }
+    #github-star svg {
+      fill: #ccc;
+    }
+    #github-star:hover svg {
+      fill: #f0c14b;
+    }
+
     #status-dot {
       width: 8px;
       height: 8px;
@@ -220,6 +248,10 @@
       <div id="status-dot"></div>
       <span id="status-text">Connecting...</span>
       <span id="doc-info"></span>
+      <a id="github-star" href="https://github.com/attalla1/photopea-mcp-server" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25z"/></svg>
+        Star on GitHub
+      </a>
     </div>
 
     <!-- Photopea iframe -->
