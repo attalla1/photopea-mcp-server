@@ -20,6 +20,10 @@
   <img src="assets/demo.gif" alt="Demo" width="1000">
 </p>
 
+<p align="center">
+  <em>Prompt used in this demo: <a href="examples/album-cover-demo.md">examples/album-cover-demo.md</a></em>
+</p>
+
 ## How It Works
 
 ```mermaid
