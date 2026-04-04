@@ -16,7 +16,9 @@
 
 ## Demo
 
-https://github.com/attalla1/photopea-mcp-server/releases/download/v0.1.0/photopea-mcp-demo.mp4
+<p align="center">
+  <img src="assets/demo.gif" alt="Demo" width="1000">
+</p>
 
 ## How It Works
 
