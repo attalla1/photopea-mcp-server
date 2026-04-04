@@ -1,6 +1,18 @@
-# photopea-mcp-server
+<p align="center">
+  <img src="assets/photopea-icon.svg" alt="Photopea" width="120" height="120">
+</p>
 
-AI-driven image editing through [Photopea](https://www.photopea.com), controlled by your AI assistant via the [Model Context Protocol](https://modelcontextprotocol.io).
+<h1 align="center">Photopea MCP Server</h1>
+
+<p align="center">
+  AI-powered image editing through <a href="https://www.photopea.com">Photopea</a>, controlled by your AI assistant via the <a href="https://modelcontextprotocol.io">Model Context Protocol</a>.
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/photopea-mcp-server"><img src="https://img.shields.io/npm/v/photopea-mcp-server.svg" alt="npm version"></a>
+  <a href="https://github.com/attalla1/photopea-mcp-server/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/photopea-mcp-server.svg" alt="license"></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/photopea-mcp-server.svg" alt="node"></a>
+</p>
 
 ## How It Works
 
