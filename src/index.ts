@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 import { dirname, join, resolve } from "path";
 import { PhotopeaBridge } from "./bridge/websocket-server.js";
 import { createServer } from "./server.js";
-import { findAvailablePort, launchBrowser } from "./utils/platform.js";
+import { findAvailablePort } from "./utils/platform.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -40,15 +40,7 @@ async function main(): Promise<void> {
   await bridge.start();
   console.error(`Photopea MCP bridge running on http://127.0.0.1:${port}`);
 
-  // Launch browser
-  try {
-    await launchBrowser(`http://127.0.0.1:${port}`);
-    console.error("Browser launched. Waiting for Photopea to initialize...");
-  } catch {
-    console.error(`Could not auto-launch browser. Please open http://127.0.0.1:${port}`);
-  }
-
-  // Start MCP server over stdio
+  // Start MCP server over stdio (browser launches lazily on first tool call)
   const mcpServer = createServer(bridge);
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);

@@ -226,8 +226,7 @@
     <div id="photopea-wrap">
       <iframe
         id="photopea"
-        src="https://www.photopea.com"
-        allow="camera; microphone"
+        src="https://www.photopea.com#%7B%7D"
       ></iframe>
     </div>
 
@@ -550,12 +549,15 @@
         } else {
           // Script result (echoToOE strings joined)
           var resultData = echoBuffer.length > 0 ? echoBuffer.join('\n') : null;
+          // Detect script errors: if the result contains an error pattern and
+          // no explicit echoToOE('ok') was received, treat it as a failure.
+          var hasError = resultData !== null && /^(ReferenceError|TypeError|SyntaxError|Error|RangeError):/.test(resultData);
           sendToWS({
             type:    'result',
             id:      id,
-            success: true,
-            data:    resultData,
-            error:   null
+            success: !hasError,
+            data:    hasError ? null : resultData,
+            error:   hasError ? resultData : null
           });
         }
 

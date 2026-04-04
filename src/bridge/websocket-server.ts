@@ -11,6 +11,7 @@ import type {
   LoadMessage,
   PendingRequest,
 } from "./types.js";
+import { launchBrowser } from "../utils/platform.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const EXPORT_TIMEOUT_MS = 60_000;
@@ -26,6 +27,7 @@ export class PhotopeaBridge {
   private pendingScripts: Map<string, string> = new Map();
   private pendingLoads: Map<string, string> = new Map(); // id -> serialized LoadMessage JSON
   private port: number;
+  private browserLaunched: boolean = false;
 
   constructor(port: number) {
     this.port = port;
@@ -87,9 +89,20 @@ export class PhotopeaBridge {
     return this.client !== null && this.ready;
   }
 
-  /** Wait for the bridge to become ready (Photopea loaded + WS connected). */
+  /** Wait for the bridge to become ready (Photopea loaded + WS connected). Launches browser on first call. */
   waitForReady(): Promise<void> {
     if (this.isReady()) return Promise.resolve();
+
+    // Lazy-launch browser on first tool call
+    if (!this.browserLaunched) {
+      this.browserLaunched = true;
+      const url = `http://127.0.0.1:${this.port}`;
+      console.error(`Launching browser: ${url}`);
+      launchBrowser(url).catch(() => {
+        console.error(`Could not auto-launch browser. Please open ${url}`);
+      });
+    }
+
     return new Promise<void>((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
