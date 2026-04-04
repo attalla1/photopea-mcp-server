@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/photopea-mcp-server"><img src="https://img.shields.io/npm/v/photopea-mcp-server.svg" alt="npm version"></a>
-  <a href="https://github.com/attalla1/photopea-mcp-server/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/photopea-mcp-server.svg" alt="license"></a>
+  <a href="https://github.com/attalla1/photopea-mcp-server/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="license"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/photopea-mcp-server.svg" alt="node"></a>
 </p>
 
