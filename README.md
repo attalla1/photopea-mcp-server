@@ -14,6 +14,10 @@
   <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/photopea-mcp-server.svg" alt="node"></a>
 </p>
 
+## Demo
+
+https://github.com/attalla1/photopea-mcp-server/releases/download/v0.1.0/photopea-mcp-demo.mp4
+
 ## How It Works
 
 ```mermaid
