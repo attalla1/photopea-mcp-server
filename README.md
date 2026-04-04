@@ -22,7 +22,7 @@ https://github.com/attalla1/photopea-mcp-server/releases/download/v0.1.0/photope
 
 ```mermaid
 graph LR
-    A[AI Assistant] <-->|stdio| B[MCP Server]
+    A[Agent] <-->|stdio| B[MCP Server]
     B <-->|WebSocket| C[Browser]
     C <-->|postMessage| D[Photopea]
 ```
