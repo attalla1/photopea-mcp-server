@@ -38,6 +38,28 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
     return { content: [{ type: "text" as const, text: `Image exported to: ${params.outputPath}` }] };
   });
 
+  // photopea_load_font
+  server.registerTool("photopea_load_font", {
+    title: "Load Font",
+    description: "Load a custom font from a URL (TTF, OTF, or WOFF2) into Photopea. The font becomes available for add_text and edit_text. Use list_fonts to find the PostScript name after loading.",
+    inputSchema: {
+      url: z.string().describe("URL to a font file (.ttf, .otf, or .woff2)"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  }, async (params) => {
+    // Loading a font via app.open() opens it as a "document" -- we need to track the current doc and switch back
+    const script = [
+      `var _docName = app.activeDocument ? app.activeDocument.name : null;`,
+      `app.open('${params.url.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}');`,
+      `if (_docName) { app.activeDocument = app.documents.getByName(_docName); }`,
+      `app.echoToOE('ok');`,
+    ].join("\n");
+    bridge.sendActivity({ type: "activity", id: "", tool: "load_font", summary: `Load font: ${params.url.split("/").pop()}` });
+    const result = await bridge.executeScript(script);
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to load font" }] };
+    return { content: [{ type: "text" as const, text: `Font loaded from: ${params.url}. Use list_fonts to find its PostScript name.` }] };
+  });
+
   // photopea_list_fonts
   server.registerTool("photopea_list_fonts", {
     title: "List Fonts",

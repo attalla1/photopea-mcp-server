@@ -162,11 +162,12 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 | `photopea_fill_selection` | Fill the current selection with a color |
 | `photopea_clear_selection` | Deselect the current selection |
 
-### Export & Utility (5 tools)
+### Export & Utility (6 tools)
 
 | Tool | Description |
 |------|-------------|
 | `photopea_export_image` | Export to PNG, JPG, WebP, PSD, or SVG |
+| `photopea_load_font` | Load a custom font from a URL (TTF, OTF, WOFF2) |
 | `photopea_list_fonts` | List available fonts, with optional search filter |
 | `photopea_run_script` | Execute arbitrary Photopea JavaScript |
 | `photopea_undo` | Undo one or more actions |
@@ -210,7 +211,7 @@ npm run build
 
 The server has four main components:
 
-**MCP Server** (`src/server.ts`) -- Registers all 33 tools with the MCP SDK and connects via stdio transport.
+**MCP Server** (`src/server.ts`) -- Registers all 34 tools with the MCP SDK and connects via stdio transport.
 
 **WebSocket Bridge** (`src/bridge/websocket-server.ts`) -- Manages the connection between the MCP server and the browser. Queues script execution requests and handles responses with timeouts.
 
@@ -231,7 +232,7 @@ src/
     layer.ts            # Layer operations (11 tools)
     text.ts             # Text and shape operations (3 tools)
     image.ts            # Image, adjustment, filter operations (9 tools)
-    export.ts           # Export and utility operations (5 tools)
+    export.ts           # Export and utility operations (6 tools)
   utils/
     file-io.ts          # Local file read/write, URL fetching
     platform.ts         # Port discovery, browser launch
