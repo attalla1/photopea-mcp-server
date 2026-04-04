@@ -5,7 +5,7 @@
 <h1 align="center">Photopea MCP Server</h1>
 
 <p align="center">
-  AI-powered image editing through <a href="https://www.photopea.com">Photopea</a>, controlled by your AI assistant via the <a href="https://modelcontextprotocol.io">Model Context Protocol</a>.
+  AI-powered image editing through <a href="https://www.photopea.com">Photopea</a>, controlled by your agent via the <a href="https://modelcontextprotocol.io">Model Context Protocol</a>.
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@ graph LR
     C <-->|postMessage| D[Photopea]
 ```
 
-Your AI assistant sends editing commands through the MCP protocol. The server translates these into Photopea JavaScript API calls and executes them via a WebSocket bridge to the browser.
+Your agent sends editing commands through the MCP protocol. The server translates these into Photopea JavaScript API calls and executes them via a WebSocket bridge to the browser.
 
 **Note:** A browser window will open automatically on the first tool call. This is expected -- Photopea runs entirely in the browser and the server needs it to perform image editing operations.
 
@@ -179,7 +179,7 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 
 ## Usage Examples
 
-Once installed, ask your AI assistant to perform image editing tasks:
+Once installed, ask your agent to perform image editing tasks:
 
 **Create a poster:**
 > "Create a 1920x1080 document with a dark blue background, add the title 'Hello World' in white 72px Arial, and export it as a PNG to ~/Desktop/poster.png"
