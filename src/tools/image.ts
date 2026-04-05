@@ -22,14 +22,14 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
   // 19. photopea_place_image
   server.registerTool("photopea_place_image", {
     title: "Place Image",
-    description: "Place an image into the active document from a URL or local file path.",
+    description: "Place an image into the active document from a URL or local file path. Creates a new layer with the placed image as the active layer. Use width/height to resize while preserving aspect ratio, or x/y to position the layer.",
     inputSchema: {
-      source: z.string().describe("URL or local file path of image to place"),
-      x: z.number().optional().describe("X position offset"),
-      y: z.number().optional().describe("Y position offset"),
-      width: z.number().positive().optional().describe("Resize to this width in pixels"),
-      height: z.number().positive().optional().describe("Resize to this height in pixels"),
-      name: z.string().optional().describe("Name for the placed layer"),
+      source: z.string().describe("URL or absolute local file path of the image to place"),
+      x: z.number().optional().describe("X position offset in pixels from the left edge"),
+      y: z.number().optional().describe("Y position offset in pixels from the top edge"),
+      width: z.number().positive().optional().describe("Resize to this width in pixels (preserves aspect ratio if only one dimension is set)"),
+      height: z.number().positive().optional().describe("Resize to this height in pixels (preserves aspect ratio if only one dimension is set)"),
+      name: z.string().optional().describe("Display name for the placed layer in the layers panel"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -96,10 +96,10 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
   // 20. photopea_apply_adjustment
   server.registerTool("photopea_apply_adjustment", {
     title: "Apply Adjustment",
-    description: "Apply an image adjustment (brightness/contrast, hue/saturation, levels, or curves) to the active layer.",
+    description: "Apply a destructive image adjustment to the active layer's pixel data. Use select_layer to target a specific layer first. Modifies pixels directly — use undo to revert if needed.",
     inputSchema: {
-      type: z.enum(["brightness", "hue_sat", "levels", "curves"]).describe("Adjustment type"),
-      settings: z.record(z.union([z.number(), z.string(), z.boolean()])).optional().describe("Adjustment settings (e.g. { brightness: 20, contrast: 10 })"),
+      type: z.enum(["brightness", "hue_sat", "levels", "curves"]).describe("Adjustment type: 'brightness' for brightness/contrast, 'hue_sat' for hue/saturation/lightness, 'levels' for input levels, 'curves' for tone curves"),
+      settings: z.record(z.union([z.number(), z.string(), z.boolean()])).optional().describe("Key-value settings for the adjustment. For brightness: { brightness: -100..100, contrast: -100..100 }. For hue_sat: { hue: -180..180, saturation: -100..100, lightness: -100..100 }. For levels: { inputBlack: 0..255, inputWhite: 0..255 }"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -113,10 +113,10 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
   // 21. photopea_apply_filter
   server.registerTool("photopea_apply_filter", {
     title: "Apply Filter",
-    description: "Apply a filter (gaussian blur, sharpen, unsharp mask, noise, or motion blur) to the active layer.",
+    description: "Apply a destructive filter effect to the active layer's pixel data. Use select_layer to target a specific layer first. Modifies pixels directly — use undo to revert if needed.",
     inputSchema: {
-      type: z.enum(["gaussian_blur", "sharpen", "unsharp_mask", "noise", "motion_blur"]).describe("Filter type"),
-      settings: z.record(z.union([z.number(), z.string(), z.boolean()])).optional().describe("Filter settings (e.g. { radius: 5 })"),
+      type: z.enum(["gaussian_blur", "sharpen", "unsharp_mask", "noise", "motion_blur"]).describe("Filter type to apply to the active layer"),
+      settings: z.record(z.union([z.number(), z.string(), z.boolean()])).optional().describe("Key-value settings for the filter. For gaussian_blur: { radius: pixels }. For unsharp_mask: { amount: 1-500, radius: 0.1-250, threshold: 0-255 }. For motion_blur: { angle: degrees, distance: pixels }. For noise: { amount: 1-100 }"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -130,14 +130,14 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
   // 22. photopea_transform_layer
   server.registerTool("photopea_transform_layer", {
     title: "Transform Layer",
-    description: "Scale, rotate, or flip a layer.",
+    description: "Scale, rotate, or flip a layer in-place. Modifies the layer's pixel data destructively. Use get_layers to check current layer bounds before transforming, and undo to revert if needed.",
     inputSchema: {
       target: layerTarget,
-      scaleX: z.number().positive().optional().describe("Horizontal scale factor (1.0 = 100%)"),
-      scaleY: z.number().positive().optional().describe("Vertical scale factor (1.0 = 100%)"),
-      rotation: z.number().optional().describe("Rotation in degrees (clockwise)"),
-      flipH: z.boolean().optional().describe("Flip horizontally"),
-      flipV: z.boolean().optional().describe("Flip vertically"),
+      scaleX: z.number().positive().optional().describe("Horizontal scale factor (1.0 = no change, 0.5 = half size, 2.0 = double size)"),
+      scaleY: z.number().positive().optional().describe("Vertical scale factor (1.0 = no change, 0.5 = half size, 2.0 = double size)"),
+      rotation: z.number().optional().describe("Rotation angle in degrees (positive = clockwise, negative = counter-clockwise)"),
+      flipH: z.boolean().optional().describe("Flip the layer horizontally (mirror left-right)"),
+      flipV: z.boolean().optional().describe("Flip the layer vertically (mirror top-bottom)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -151,12 +151,12 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
   // 24. photopea_add_gradient
   server.registerTool("photopea_add_gradient", {
     title: "Add Gradient",
-    description: "Apply a linear gradient fill to a layer.",
+    description: "Apply a linear gradient fill to a layer, replacing its current pixel content. The target layer must already exist — use add_layer to create one first. Colors are distributed evenly across the gradient.",
     inputSchema: {
       target: layerTarget,
-      type: z.enum(["linear"]).describe("Gradient type"),
-      colors: z.array(hexColor).min(2).describe("Array of hex color stops (minimum 2)"),
-      angle: z.number().optional().describe("Gradient angle in degrees"),
+      type: z.enum(["linear"]).describe("Gradient type (currently only 'linear' is supported)"),
+      colors: z.array(hexColor).min(2).describe("Array of hex color stops distributed evenly along the gradient (minimum 2, e.g. ['#ff0000', '#0000ff'])"),
+      angle: z.number().optional().describe("Gradient angle in degrees (0 = left-to-right, 90 = top-to-bottom, default 0)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -170,16 +170,16 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
   // 25. photopea_make_selection
   server.registerTool("photopea_make_selection", {
     title: "Make Selection",
-    description: "Create a selection (all, rectangular, or elliptical) in the active document.",
+    description: "Create a pixel selection region in the active document. After creating a selection, use fill_selection to fill it with color, or clear_selection to deselect. Use type 'all' to select the entire canvas, or 'rect'/'ellipse' with bounds for a specific region.",
     inputSchema: {
-      type: z.enum(["all", "rect", "ellipse"]).describe("Selection type"),
+      type: z.enum(["all", "rect", "ellipse"]).describe("Selection shape: 'all' selects the entire canvas, 'rect' creates a rectangle, 'ellipse' creates an ellipse"),
       bounds: z.object({
-        x: z.number().describe("Left edge X"),
-        y: z.number().describe("Top edge Y"),
-        width: z.number().positive().describe("Selection width"),
-        height: z.number().positive().describe("Selection height"),
-      }).optional().describe("Selection bounds (ignored for 'all' type)"),
-      feather: z.number().min(0).optional().describe("Feather radius in pixels"),
+        x: z.number().describe("Left edge X position in pixels"),
+        y: z.number().describe("Top edge Y position in pixels"),
+        width: z.number().positive().describe("Selection width in pixels"),
+        height: z.number().positive().describe("Selection height in pixels"),
+      }).optional().describe("Selection region bounds in pixels. Required for 'rect' and 'ellipse' types, ignored for 'all'."),
+      feather: z.number().min(0).optional().describe("Soft edge radius in pixels for anti-aliased selection edges (0 = hard edge)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -196,10 +196,10 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
   // 26. photopea_modify_selection
   server.registerTool("photopea_modify_selection", {
     title: "Modify Selection",
-    description: "Modify the current selection by expanding, contracting, feathering, or inverting it.",
+    description: "Modify the current active selection. Requires an existing selection created by make_selection. For expand, contract, and feather, the amount parameter specifies pixels. Invert swaps selected and unselected areas.",
     inputSchema: {
-      action: z.enum(["expand", "contract", "feather", "invert"]).describe("Modification action"),
-      amount: z.number().min(0).optional().describe("Amount in pixels (for expand, contract, feather)"),
+      action: z.enum(["expand", "contract", "feather", "invert"]).describe("How to modify the selection: 'expand' grows it, 'contract' shrinks it, 'feather' softens edges, 'invert' swaps selected/unselected"),
+      amount: z.number().min(0).optional().describe("Modification amount in pixels (required for expand, contract, feather; ignored for invert)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -213,11 +213,11 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
   // 27. photopea_fill_selection
   server.registerTool("photopea_fill_selection", {
     title: "Fill Selection",
-    description: "Fill the current selection with a color.",
+    description: "Fill the current selection with a solid color on the active layer. Requires an active selection — use make_selection to create one first. Modifies pixel data on the active layer directly. Use clear_selection afterward to deselect.",
     inputSchema: {
       color: hexColor,
-      opacity: z.number().min(0).max(100).optional().describe("Fill opacity (0-100)"),
-      blendMode: z.string().optional().describe("Blend mode for the fill"),
+      opacity: z.number().min(0).max(100).optional().describe("Fill opacity percentage (0 = fully transparent, 100 = fully opaque, default 100)"),
+      blendMode: z.string().optional().describe("Blend mode for the fill (e.g. normal, multiply, screen, overlay, darken, lighten). Defaults to normal."),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -231,7 +231,7 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
   // 28. photopea_clear_selection
   server.registerTool("photopea_clear_selection", {
     title: "Clear Selection",
-    description: "Deselect / clear the current selection in the active document.",
+    description: "Deselect the current selection in the active document, removing the marching ants. Does not modify any pixel data. Use after fill_selection or other selection-based operations are complete.",
     inputSchema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async (_params) => {

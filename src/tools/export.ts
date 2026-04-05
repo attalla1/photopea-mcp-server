@@ -15,11 +15,11 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
   // 30. photopea_export_image
   server.registerTool("photopea_export_image", {
     title: "Export Image",
-    description: "Export the active document to a file (PNG, JPG, WebP, PSD, or SVG) and save it to a local path.",
+    description: "Export the active document to a file and save it to the local filesystem. The entire document is flattened and exported in the chosen format. Use create_document or open_file to set up the document before exporting.",
     inputSchema: {
-      format: z.enum(["png", "jpg", "webp", "psd", "svg"]).describe("Export format"),
-      quality: z.number().min(1).max(100).optional().describe("JPEG quality (1-100, only for jpg)"),
-      outputPath: z.string().describe("Local file path where the export should be saved"),
+      format: z.enum(["png", "jpg", "webp", "psd", "svg"]).describe("Output format: 'png' for lossless, 'jpg' for compressed photos, 'webp' for web, 'psd' for Photoshop, 'svg' for vector"),
+      quality: z.number().min(1).max(100).optional().describe("Compression quality for JPG format only (1 = smallest file, 100 = best quality). Ignored for other formats."),
+      outputPath: z.string().describe("Absolute local file path where the exported file will be saved (e.g. /Users/me/output.png)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -83,9 +83,9 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
   // 33. photopea_run_script
   server.registerTool("photopea_run_script", {
     title: "Run Script",
-    description: "Execute an arbitrary Photopea JavaScript script.",
+    description: "Execute arbitrary Photopea/ExtendScript JavaScript in the Photopea environment. Use this for advanced operations not covered by other tools. Has full access to the Photopea DOM (app, activeDocument, layers). Use with caution — scripts can modify or delete any document data.",
     inputSchema: {
-      script: z.string().describe("JavaScript code to execute in Photopea"),
+      script: z.string().describe("Photopea JavaScript code to execute. Must call app.echoToOE(result) to return data. Has access to the full Photopea scripting API (app, activeDocument, etc.)."),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   }, async (params) => {
@@ -100,9 +100,9 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
   // 34. photopea_undo
   server.registerTool("photopea_undo", {
     title: "Undo",
-    description: "Undo one or more recent actions in Photopea.",
+    description: "Undo one or more recent actions in the active document. Each step reverses one operation from the history. Use after destructive operations (apply_filter, apply_adjustment, fill_selection) to revert changes.",
     inputSchema: {
-      steps: z.number().int().positive().default(1).describe("Number of undo steps (default 1)"),
+      steps: z.number().int().positive().default(1).describe("Number of history steps to undo (default 1)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -116,9 +116,9 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
   // 35. photopea_redo
   server.registerTool("photopea_redo", {
     title: "Redo",
-    description: "Redo one or more previously undone actions in Photopea.",
+    description: "Redo one or more previously undone actions in the active document. Only available after using undo — the redo history is cleared when new actions are performed.",
     inputSchema: {
-      steps: z.number().int().positive().default(1).describe("Number of redo steps (default 1)"),
+      steps: z.number().int().positive().default(1).describe("Number of history steps to redo (default 1)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, async (params) => {

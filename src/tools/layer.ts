@@ -23,11 +23,11 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
   // 6. photopea_add_layer
   server.registerTool("photopea_add_layer", {
     title: "Add Layer",
-    description: "Add a new empty art layer to the active document.",
+    description: "Add a new empty layer to the active document. The new layer becomes the active layer. Use this before operations that draw onto a layer, such as fill_selection or add_gradient.",
     inputSchema: {
-      name: z.string().optional().describe("Name for the new layer"),
-      opacity: z.number().min(0).max(100).optional().describe("Layer opacity (0-100)"),
-      blendMode: z.string().optional().describe("Blend mode (e.g. normal, multiply, screen, overlay)"),
+      name: z.string().optional().describe("Display name for the new layer in the layers panel"),
+      opacity: z.number().min(0).max(100).optional().describe("Layer opacity percentage (0 = fully transparent, 100 = fully opaque, default 100)"),
+      blendMode: z.string().optional().describe("Blend mode (e.g. normal, multiply, screen, overlay, darken, lighten). Defaults to normal."),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -41,11 +41,11 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
   // 7. photopea_add_fill_layer
   server.registerTool("photopea_add_fill_layer", {
     title: "Add Fill Layer",
-    description: "Add a solid color fill layer.",
+    description: "Add a non-destructive solid color fill layer that covers the entire canvas. Unlike fill_selection, this creates a separate adjustment-style layer that can be toggled, recolored, or deleted without affecting other layers. Use set_layer_properties to change its opacity or blend mode.",
     inputSchema: {
-      type: z.enum(["solid"]).describe("Fill type: solid"),
-      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).describe("Fill color as hex"),
-      name: z.string().optional().describe("Name for the fill layer"),
+      type: z.enum(["solid"]).describe("Fill layer type (currently only 'solid' is supported)"),
+      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).describe("Fill color as hex string (e.g. #ff0000)"),
+      name: z.string().optional().describe("Display name for the fill layer in the layers panel"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -59,7 +59,7 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
   // 8. photopea_delete_layer
   server.registerTool("photopea_delete_layer", {
     title: "Delete Layer",
-    description: "Delete a layer from the active document by name or index.",
+    description: "Permanently remove a layer from the active document by name or index. The next layer in the stack becomes active after deletion. Use get_layers to see available layers before deleting.",
     inputSchema: {
       target: layerTarget,
     },
@@ -75,7 +75,7 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
   // 9. photopea_select_layer
   server.registerTool("photopea_select_layer", {
     title: "Select Layer",
-    description: "Make a layer the active layer by name or index.",
+    description: "Set a layer as the active layer by name or index. Many tools (apply_filter, apply_adjustment, fill_selection) operate on the active layer — use this to target a specific layer first. Use get_layers to find layer names and indices.",
     inputSchema: {
       target: layerTarget,
     },
@@ -91,14 +91,14 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
   // 10. photopea_set_layer_properties
   server.registerTool("photopea_set_layer_properties", {
     title: "Set Layer Properties",
-    description: "Set one or more properties on a layer (opacity, blend mode, visibility, name, locked).",
+    description: "Update one or more properties on a layer. Only specified properties are changed; others remain at their current values. Use get_layers to inspect current property values before modifying.",
     inputSchema: {
       target: layerTarget,
-      opacity: z.number().min(0).max(100).optional().describe("Layer opacity (0-100)"),
-      blendMode: z.string().optional().describe("Blend mode (e.g. normal, multiply, screen, overlay)"),
-      visible: z.boolean().optional().describe("Layer visibility"),
-      name: z.string().optional().describe("New layer name"),
-      locked: z.boolean().optional().describe("Whether the layer is locked"),
+      opacity: z.number().min(0).max(100).optional().describe("Layer opacity percentage (0 = fully transparent, 100 = fully opaque)"),
+      blendMode: z.string().optional().describe("Blend mode (e.g. normal, multiply, screen, overlay, darken, lighten, color-dodge, color-burn)"),
+      visible: z.boolean().optional().describe("Layer visibility (true = visible, false = hidden)"),
+      name: z.string().optional().describe("New display name for the layer"),
+      locked: z.boolean().optional().describe("Whether the layer is locked (true = prevent edits, false = allow edits)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -112,11 +112,11 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
   // 11. photopea_move_layer
   server.registerTool("photopea_move_layer", {
     title: "Move Layer",
-    description: "Translate a layer by a given x/y offset in pixels.",
+    description: "Translate a layer by a relative x/y offset in pixels from its current position. Positive x moves right, positive y moves down. Use get_layers to check current layer bounds, or transform_layer for scaling and rotation.",
     inputSchema: {
       target: layerTarget,
-      x: z.number().describe("Horizontal offset in pixels"),
-      y: z.number().describe("Vertical offset in pixels"),
+      x: z.number().describe("Horizontal offset in pixels (positive = right, negative = left)"),
+      y: z.number().describe("Vertical offset in pixels (positive = down, negative = up)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -130,10 +130,10 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
   // 12. photopea_duplicate_layer
   server.registerTool("photopea_duplicate_layer", {
     title: "Duplicate Layer",
-    description: "Duplicate a layer, optionally giving the copy a new name.",
+    description: "Create a copy of a layer in the active document. The duplicate becomes the active layer and is placed above the original. Use newName to distinguish the copy from the original.",
     inputSchema: {
       target: layerTarget,
-      newName: z.string().optional().describe("Name for the duplicated layer"),
+      newName: z.string().optional().describe("Display name for the duplicated layer (defaults to 'original name copy')"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -147,10 +147,10 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
   // 13. photopea_reorder_layer
   server.registerTool("photopea_reorder_layer", {
     title: "Reorder Layer",
-    description: "Move a layer to a new position in the layer stack (above, below, top, or bottom).",
+    description: "Move a layer to a new position in the layer stack. Use 'top' or 'bottom' to move to the ends of the stack, or 'above'/'below' to shift one position relative to the current index. Use get_layers to see the current layer order.",
     inputSchema: {
       target: layerTarget,
-      position: z.enum(["above", "below", "top", "bottom"]).describe("Target position in layer stack"),
+      position: z.enum(["above", "below", "top", "bottom"]).describe("Target position: 'top' = front of stack, 'bottom' = back of stack, 'above' = one position up, 'below' = one position down"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -164,10 +164,10 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
   // 14. photopea_group_layers
   server.registerTool("photopea_group_layers", {
     title: "Group Layers",
-    description: "Group a set of named layers into a layer group.",
+    description: "Group multiple layers into a layer group (folder). Layers are specified by name — use get_layers to find layer names. Grouped layers can be ungrouped later with ungroup_layers.",
     inputSchema: {
-      layers: z.array(z.string()).describe("Array of layer names to include in the group"),
-      groupName: z.string().optional().describe("Name for the group"),
+      layers: z.array(z.string()).describe("Array of layer names to include in the group (use get_layers to find names)"),
+      groupName: z.string().optional().describe("Display name for the group folder in the layers panel"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -181,9 +181,9 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
   // photopea_ungroup_layers
   server.registerTool("photopea_ungroup_layers", {
     title: "Ungroup Layers",
-    description: "Ungroup a layer group, moving all its children to the document root.",
+    description: "Dissolve a layer group, moving all child layers to the document root. The group folder is removed but its contents are preserved. Use get_layers to find group names.",
     inputSchema: {
-      target: z.string().describe("Name of the layer group to ungroup"),
+      target: z.string().describe("Name of the layer group to ungroup (use get_layers to find group names)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -204,7 +204,7 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
   // 15. photopea_get_layers
   server.registerTool("photopea_get_layers", {
     title: "Get Layers",
-    description: "Get the full layer tree of the active document as a JSON structure.",
+    description: "Get the full layer tree of the active document as JSON. Returns an array of layer objects with name, type, index, visible, opacity, blendMode, and bounds properties. Groups contain nested children arrays. Use this to discover layer names and indices for other layer operations.",
     inputSchema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async (_params) => {

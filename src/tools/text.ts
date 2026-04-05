@@ -15,13 +15,13 @@ export function registerTextTools(server: McpServer, bridge: PhotopeaBridge): vo
   // 16. photopea_add_text
   server.registerTool("photopea_add_text", {
     title: "Add Text",
-    description: "Add a text layer to the active document at specified coordinates.",
+    description: "Add a new text layer to the active document at the specified position. The text layer becomes the active layer. Use paragraphBounds to create a text box with word wrapping, or omit for point text. Use load_font to add custom fonts, and list_fonts to find available font names.",
     inputSchema: {
-      content: z.string().describe("Text content to display"),
-      x: z.number().describe("X position in pixels"),
-      y: z.number().describe("Y position in pixels"),
-      font: z.string().optional().describe("Font name (e.g. Arial)"),
-      size: z.number().positive().optional().describe("Font size in points"),
+      content: z.string().describe("Text content to display on the layer"),
+      x: z.number().describe("X position in pixels from the left edge of the document"),
+      y: z.number().describe("Y position in pixels from the top edge of the document"),
+      font: z.string().optional().describe("Font PostScript name (e.g. ArialMT, Helvetica-Bold). Use list_fonts to find available names."),
+      size: z.number().positive().optional().describe("Font size in points (default varies by document resolution)"),
       color: hexColor.optional(),
       alignment: z.enum(["left", "center", "right"]).optional().describe("Text alignment"),
       bold: z.boolean().optional().describe("Apply faux bold"),
@@ -49,11 +49,11 @@ export function registerTextTools(server: McpServer, bridge: PhotopeaBridge): vo
   // 17. photopea_edit_text
   server.registerTool("photopea_edit_text", {
     title: "Edit Text",
-    description: "Edit the content or style of an existing text layer.",
+    description: "Modify the content or style of an existing text layer. Only specified properties are changed — omit parameters to keep their current values. Use get_layers to find text layer names if needed.",
     inputSchema: {
       target: layerTarget,
-      content: z.string().optional().describe("New text content"),
-      font: z.string().optional().describe("New font name"),
+      content: z.string().optional().describe("New text content to replace existing text"),
+      font: z.string().optional().describe("New font PostScript name (use list_fonts to find available names)"),
       size: z.number().positive().optional().describe("New font size in points"),
       color: hexColor.optional(),
       alignment: z.enum(["left", "center", "right"]).optional().describe("Text alignment"),
@@ -72,9 +72,9 @@ export function registerTextTools(server: McpServer, bridge: PhotopeaBridge): vo
   // 18. photopea_add_shape
   server.registerTool("photopea_add_shape", {
     title: "Add Shape",
-    description: "Add a shape layer (rectangle or ellipse) to the active document.",
+    description: "Add a vector shape layer (rectangle or ellipse) to the active document. The shape layer becomes the active layer. Shapes are non-destructive and can be resized with transform_layer without quality loss.",
     inputSchema: {
-      type: z.enum(["rectangle", "ellipse"]).describe("Shape type"),
+      type: z.enum(["rectangle", "ellipse"]).describe("Shape type to create"),
       bounds: z.object({
         x: z.number().describe("Left edge X position in pixels"),
         y: z.number().describe("Top edge Y position in pixels"),

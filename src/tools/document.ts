@@ -15,14 +15,14 @@ export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge)
   // 1. photopea_create_document
   server.registerTool("photopea_create_document", {
     title: "Create Document",
-    description: "Create a new Photopea document with specified dimensions and settings.",
+    description: "Create a new blank document and make it the active document. This is typically the first step in a workflow. The document opens with a Background layer. Use open_file instead to edit an existing image.",
     inputSchema: {
-      width: z.number().positive().describe("Document width in pixels"),
-      height: z.number().positive().describe("Document height in pixels"),
-      resolution: z.number().positive().default(72).describe("Resolution in DPI (default 72)"),
-      name: z.string().default("Untitled").describe("Document name"),
-      mode: z.enum(["RGB", "CMYK", "Grayscale", "Lab", "Bitmap"]).default("RGB").describe("Color mode"),
-      fillColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Background fill color as hex (e.g. #ffffff)"),
+      width: z.number().positive().describe("Document width in pixels (e.g. 1920 for full HD)"),
+      height: z.number().positive().describe("Document height in pixels (e.g. 1080 for full HD)"),
+      resolution: z.number().positive().default(72).describe("Resolution in DPI (72 for screen, 300 for print)"),
+      name: z.string().default("Untitled").describe("Document name shown in the title bar"),
+      mode: z.enum(["RGB", "CMYK", "Grayscale", "Lab", "Bitmap"]).default("RGB").describe("Color mode (use RGB for most workflows)"),
+      fillColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Background fill color as hex (e.g. #ffffff for white, #000000 for black). Defaults to white if omitted."),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -36,9 +36,9 @@ export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge)
   // 2. photopea_open_file
   server.registerTool("photopea_open_file", {
     title: "Open File",
-    description: "Open an image file in Photopea from a URL or local path.",
+    description: "Open an existing image file in Photopea as a new document. Supports PSD, PNG, JPG, WebP, SVG, and other common formats. The opened file becomes the active document. Use create_document instead to start with a blank canvas.",
     inputSchema: {
-      source: z.string().describe("URL or local file path to open"),
+      source: z.string().describe("URL or absolute local file path of the image to open (e.g. /Users/me/photo.psd or https://example.com/image.png)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -73,7 +73,7 @@ export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge)
   // 3. photopea_get_document_info
   server.registerTool("photopea_get_document_info", {
     title: "Get Document Info",
-    description: "Get information about the active document (name, dimensions, resolution, layer count, color mode).",
+    description: "Get metadata about the active document including name, width, height, resolution (DPI), layer count, and color mode. Returns JSON. Use this to check document dimensions before positioning layers or making selections.",
     inputSchema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async (_params) => {
@@ -88,10 +88,10 @@ export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge)
   // 4. photopea_resize_document
   server.registerTool("photopea_resize_document", {
     title: "Resize Document",
-    description: "Resize the active document to new dimensions (resamples content to fit).",
+    description: "Resize the active document canvas to new pixel dimensions, resampling all layer content to fit. This is a destructive operation — all layers are scaled proportionally. Use undo to revert if needed.",
     inputSchema: {
-      width: z.number().positive().describe("New width in pixels"),
-      height: z.number().positive().describe("New height in pixels"),
+      width: z.number().positive().describe("New document width in pixels"),
+      height: z.number().positive().describe("New document height in pixels"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
@@ -105,9 +105,9 @@ export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge)
   // 5. photopea_close_document
   server.registerTool("photopea_close_document", {
     title: "Close Document",
-    description: "Close the active document, optionally saving changes first.",
+    description: "Close the active document. Set save to true to save changes before closing. Unsaved changes are discarded if save is false. The next open document becomes active, if any.",
     inputSchema: {
-      save: z.boolean().default(false).describe("Whether to save changes before closing"),
+      save: z.boolean().default(false).describe("Whether to save changes before closing (true = save first, false = discard unsaved changes)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
