@@ -9,9 +9,14 @@
 </p>
 
 <p align="center">
+  <a href="https://glama.ai/mcp/servers/attalla1/photopea-mcp-server"><img src="https://glama.ai/mcp/servers/attalla1/photopea-mcp-server/badges/score.svg" alt="Glama score"></a>
   <a href="https://www.npmjs.com/package/photopea-mcp-server"><img src="https://img.shields.io/npm/v/photopea-mcp-server.svg" alt="npm version"></a>
   <a href="https://github.com/attalla1/photopea-mcp-server/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="license"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/photopea-mcp-server.svg" alt="node"></a>
+</p>
+
+<p align="center">
+  <a href="https://glama.ai/mcp/servers/attalla1/photopea-mcp-server"><img src="https://glama.ai/mcp/servers/attalla1/photopea-mcp-server/badges/card.svg" alt="photopea-mcp-server MCP server"></a>
 </p>
 
 ## Demo
