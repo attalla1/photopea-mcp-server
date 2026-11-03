@@ -805,12 +805,8 @@ export function buildExportImage(params: ExportImageParams): string {
   const { format, quality } = params;
   const lines: string[] = [];
 
-  let formatStr: string;
-  if (format === "jpg" && quality !== undefined) {
-    formatStr = `jpg:${quality}`;
-  } else {
-    formatStr = format;
-  }
+  // Photopea takes quality as 0-1 after the colon; the tool takes 1-100
+  const formatStr = (format === "jpg" || format === "webp") && quality !== undefined ? `${format}:${quality / 100}` : format;
 
   lines.push(`app.activeDocument.saveToOE('${formatStr}');`);
   return lines.join("\n");

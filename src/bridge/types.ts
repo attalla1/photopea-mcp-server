@@ -29,16 +29,6 @@ export interface ResultMessage {
   error: string | null;
 }
 
-/** Client -> Server: file data from export */
-export interface FileMessage {
-  id: string;
-  type: "file";
-  success: boolean;
-  data: string; // base64-encoded
-  mimeType: string;
-  error: string | null;
-}
-
 /** Client -> Server: status update */
 export interface StatusMessage {
   type: "status";
@@ -55,7 +45,6 @@ export interface ActivityMessage {
 
 export type ClientToServerMessage =
   | ResultMessage
-  | FileMessage
   | StatusMessage;
 
 // --- Bridge Internal Types ---
@@ -69,7 +58,6 @@ export interface BridgeResult {
 export interface BridgeFileResult {
   success: boolean;
   data: Buffer;
-  mimeType: string;
   error: string | null;
 }
 

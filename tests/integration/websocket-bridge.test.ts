@@ -81,17 +81,27 @@ describe("PhotopeaBridge", () => {
     expect(received).toEqual(["script1", "script2", "script3"]);
   });
 
-  it("handles file export result", async () => {
-    const fakeData = Buffer.from("fake-png").toString("base64");
+  it("receives an export larger than the old base64 limit as a binary frame", async () => {
+    const file = Buffer.alloc(80 * 1024 * 1024, 7); // 80 MB: base64 of this overflowed the old 100 MB frame limit
+    clientWs.on("message", (data) => {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === "execute") clientWs.send(Buffer.concat([Buffer.from(msg.id), file]));
+    });
+    const result = await bridge.executeScript("saveToOE('psd');", true);
+    expect(result.success).toBe(true);
+    expect((result.data as Buffer).equals(file)).toBe(true);
+  });
+
+  it("fails an export that returns no file instead of reporting success", async () => {
     clientWs.on("message", (data) => {
       const msg = JSON.parse(data.toString());
       if (msg.type === "execute") {
-        clientWs.send(JSON.stringify({ id: msg.id, type: "file", success: true, data: fakeData, mimeType: "image/png", error: null }));
+        clientWs.send(JSON.stringify({ id: msg.id, type: "result", success: true, data: "ok", error: null }));
       }
     });
-    const result = await bridge.executeScript("saveToOE('png');", true);
-    expect(result.success).toBe(true);
-    expect("mimeType" in result).toBe(true);
+    const result = await bridge.executeScript("saveToOE('psd');", true);
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/no file/);
   });
 
   it("returns error when not connected", async () => {

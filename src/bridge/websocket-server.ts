@@ -40,6 +40,7 @@ export class PhotopeaBridge {
     this.wss = new WebSocketServer({
       server: this.httpServer,
       verifyClient: ({ origin }: { origin: string }) => allowedOrigins.includes(origin),
+      maxPayload: 1024 ** 3, // exports arrive as one binary frame; large PSDs exceed the 100 MB default
     });
 
     this.wss.on("connection", (ws: WebSocket) => {
@@ -55,8 +56,14 @@ export class PhotopeaBridge {
         this.rejectAllPending(new Error("Photopea tab was replaced by a newer one. Retry the call."));
       }
 
-      ws.on("message", (raw) => {
+      ws.on("message", (raw, isBinary) => {
         if (this.client !== ws) return; // replaced tab
+        if (isBinary) {
+          // Exported file: 36-byte request id followed by the raw file bytes
+          const buf = raw as Buffer;
+          this.handleClientMessage({ type: "file", id: buf.subarray(0, 36).toString(), data: buf.subarray(36) });
+          return;
+        }
         try {
           const msg = JSON.parse(raw.toString());
           this.handleClientMessage(msg);
@@ -352,13 +359,13 @@ export class PhotopeaBridge {
       this.processing = false;
 
       if (msg.type === "file") {
-        const result: BridgeFileResult = {
-          success: (msg.success as boolean) ?? false,
-          data: Buffer.from((msg.data as string) ?? "", "base64"),
-          mimeType: (msg.mimeType as string) ?? "application/octet-stream",
-          error: (msg.error as string | null) ?? null,
-        };
-        pending.resolve(result);
+        const data = msg.data as Buffer;
+        pending.resolve(data.length > 0
+          ? { success: true, data, error: null }
+          : { success: false, data: null, error: "Photopea returned an empty file" });
+      } else if (pending.expectFiles) {
+        // Without this, a failed saveToOE would be written to disk as if it were the file
+        pending.resolve({ success: false, data: null, error: (msg.error as string | null) ?? "Photopea returned no file. Is a document open?" });
       } else {
         const result: BridgeResult = {
           success: (msg.success as boolean) ?? false,
