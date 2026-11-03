@@ -40,7 +40,7 @@ export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge)
     inputSchema: {
       source: z.string().describe("URL or absolute local file path of the image to open (e.g. /Users/me/photo.psd or https://example.com/image.png)"),
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   }, async (params) => {
     const { source } = params;
     bridge.sendActivity({ type: "activity", id: "", tool: "open_file", summary: `Open file: ${source}` });
@@ -93,7 +93,7 @@ export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge)
       width: z.number().positive().describe("New document width in pixels"),
       height: z.number().positive().describe("New document height in pixels"),
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, async (params) => {
     const script = buildResizeDocument(params);
     bridge.sendActivity({ type: "activity", id: "", tool: "resize_document", summary: `Resize to ${params.width}x${params.height}` });

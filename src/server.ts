@@ -1,4 +1,5 @@
 // src/server.ts
+import { createRequire } from "module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { PhotopeaBridge } from "./bridge/websocket-server.js";
 import { registerDocumentTools } from "./tools/document.js";
@@ -7,8 +8,11 @@ import { registerTextTools } from "./tools/text.js";
 import { registerImageTools } from "./tools/image.js";
 import { registerExportTools } from "./tools/export.js";
 
+// Same relative path from src/ and dist/
+const { version } = createRequire(import.meta.url)("../package.json");
+
 export function createServer(bridge: PhotopeaBridge): McpServer {
-  const server = new McpServer({ name: "photopea-mcp-server", version: "0.1.0" });
+  const server = new McpServer({ name: "photopea-mcp-server", version });
   registerDocumentTools(server, bridge);
   registerLayerTools(server, bridge);
   registerTextTools(server, bridge);
