@@ -821,7 +821,18 @@ const ANCHOR_ENUM = ["TOPLEFT", "TOPCENTER", "TOPRIGHT", "MIDDLELEFT", "MIDDLECE
 
 export function buildResizeCanvas(params: ResizeCanvasParams): string {
   const anchor = ANCHOR_ENUM[ANCHORS.indexOf(params.anchor)];
-  return `app.activeDocument.resizeCanvas(${params.width}, ${params.height}, AnchorPosition.${anchor});\napp.echoToOE('ok');`;
+  const lines = [`var _d = app.activeDocument;`, `_d.resizeCanvas(${params.width}, ${params.height}, AnchorPosition.${anchor});`];
+  if (params.fillColor) {
+    // The added area is transparent, so put a solid layer under everything
+    lines.push(
+      `var _prev = _d.activeLayer; var _f = _d.artLayers.add(); _f.name = 'Canvas Fill';`,
+      `var _col = new SolidColor(); _col.rgb.hexValue = '${params.fillColor.replace("#", "")}';`,
+      `_d.selection.selectAll(); _d.selection.fill(_col); _d.selection.deselect();`,
+      `_f.move(_d.layers[_d.layers.length - 1], ElementPlacement.PLACEAFTER); _d.activeLayer = _prev;`,
+    );
+  }
+  lines.push(`app.echoToOE('ok');`);
+  return lines.join("\n");
 }
 
 export function buildTrim(basis: "transparent" | "top-left-color" | "bottom-right-color"): string {
@@ -843,12 +854,14 @@ export function buildRotateCanvas(params: RotateCanvasParams): string {
 
 const AM_IDS = `var _c = function (k) { return app.charIDToTypeID(k); }; var _s = function (k) { return app.stringIDToTypeID(k); };`;
 
-function selectTarget(target?: string | number): string {
-  return target === undefined ? "" : `app.activeDocument.activeLayer = ${layerRef(target)};`;
+/** Run lines on the target layer, then make the previously active layer active again (new layers are inserted above it). */
+function onTarget(target: string | number | undefined, lines: string[]): string[] {
+  if (target === undefined) return lines;
+  return [`var _prev = app.activeDocument.activeLayer;`, `app.activeDocument.activeLayer = ${layerRef(target)};`, ...lines, `app.activeDocument.activeLayer = _prev;`];
 }
 
 export function buildLayerMask(params: LayerMaskParams): string {
-  const lines = [AM_IDS, selectTarget(params.target), `var _d = new ActionDescriptor();`, `var _r = new ActionReference();`];
+  const lines = [`var _d = new ActionDescriptor();`, `var _r = new ActionReference();`];
   lines.push(`_r.putEnumerated(_c('Chnl'), _c('Chnl'), _c('Msk '));`);
   if (params.action === "delete") {
     lines.push(`_d.putReference(_c('null'), _r);`, `app.executeAction(_c('Dlt '), _d, DialogModes.NO);`);
@@ -861,8 +874,7 @@ export function buildLayerMask(params: LayerMaskParams): string {
       `app.executeAction(_c('Mk  '), _d, DialogModes.NO);`,
     );
   }
-  lines.push(`app.echoToOE('ok');`);
-  return lines.join("\n");
+  return [AM_IDS, ...onTarget(params.target, lines), `app.echoToOE('ok');`].join("\n");
 }
 
 export function buildSetClippingMask(params: LayerTarget & { enabled: boolean }): string {
@@ -906,8 +918,6 @@ export function buildSetLayerStyle(params: LayerStyleParams): string {
     return `var _k = new ActionDescriptor(); _k.putDouble(_c('Rd  '), ${r}); _k.putDouble(_c('Grn '), ${g}); _k.putDouble(_c('Bl  '), ${b}); ${v}.putObject(_c('Clr '), _c('RGBC'), _k);`;
   };
   const lines = [
-    AM_IDS,
-    selectTarget(params.target),
     // Photopea crashes on shadow/glow descriptors that lack noise, anti-alias and contour fields
     `function _base(e, opacity) { e.putBoolean(_c('enab'), true); e.putEnumerated(_c('Md  '), _c('BlnM'), _c('Nrml')); e.putUnitDouble(_c('Opct'), _c('#Prc'), opacity); e.putUnitDouble(_c('Nose'), _c('#Prc'), 0); e.putBoolean(_c('AntA'), false);`,
     `  var tr = new ActionDescriptor(); tr.putString(_c('Nm  '), 'Linear'); var cv = new ActionList();`,
@@ -943,19 +953,18 @@ export function buildSetLayerStyle(params: LayerStyleParams): string {
   lines.push(
     `var _d = new ActionDescriptor(); var _r = new ActionReference(); _r.putProperty(_c('Prpr'), _c('Lefx')); _r.putEnumerated(_c('Lyr '), _c('Ordn'), _c('Trgt')); _d.putReference(_c('null'), _r);`,
     `_d.putObject(_c('T   '), _c('Lefx'), _fx); app.executeAction(_c('setd'), _d, DialogModes.NO);`,
-    `app.echoToOE('ok');`,
   );
-  return lines.join("\n");
+  return [AM_IDS, ...onTarget(params.target, lines), `app.echoToOE('ok');`].join("\n");
 }
 
 // ---------------------------------------------------------------------------
 // Templates
 // ---------------------------------------------------------------------------
 
-/** Scale the active layer to cover/contain the placeholder's bounds, center it above the placeholder, optionally clip to it. */
+/** Scale the active layer to cover/contain the placeholder's bounds, center it above the placeholder, optionally mask it to the placeholder's shape. */
 export function buildFitToLayer(params: FitToLayerParams): string {
   return [
-    `var _d = app.activeDocument; var _p = ${layerRef(params.placeholder)}; var _l = _d.activeLayer;`,
+    `var _doc = app.activeDocument; var _p = ${layerRef(params.placeholder)}; var _l = _doc.activeLayer;`,
     // Photopea's bound values add up wrongly with "+", so convert them to plain numbers first
     `function _n(b) { return [b[0] * 1, b[1] * 1, b[2] * 1, b[3] * 1]; }`,
     `var _pb = _n(_p.bounds), _lb = _n(_l.bounds);`,
@@ -963,8 +972,16 @@ export function buildFitToLayer(params: FitToLayerParams): string {
     `_l.resize(_f, _f, AnchorPosition.MIDDLECENTER); _lb = _n(_l.bounds);`,
     `_l.translate((_pb[0] + _pb[2] - _lb[0] - _lb[2]) / 2, (_pb[1] + _pb[3] - _lb[1] - _lb[3]) / 2);`,
     `_l.move(_p, ElementPlacement.PLACEBEFORE);`,
-    params.clip ? `_l.grouped = true;` : "",
-    `app.echoToOE('ok');`,
+    // A mask, not a clipping group: a clip breaks when a later layer lands between image and placeholder
+    ...(params.mask ? [
+      AM_IDS,
+      `var _sel = new ActionDescriptor(); var _sr = new ActionReference(); _sr.putProperty(_c('Chnl'), _c('fsel')); _sel.putReference(_c('null'), _sr);`,
+      `var _tr = new ActionReference(); _tr.putEnumerated(_c('Chnl'), _c('Chnl'), _c('Trsp')); _tr.putName(_c('Lyr '), _p.name); _sel.putReference(_c('T   '), _tr);`,
+      `app.executeAction(_c('setd'), _sel, DialogModes.NO);`,
+      `_doc.activeLayer = _l;`,
+      buildLayerMask({ action: "from_selection" }),
+      `_doc.selection.deselect();`,
+    ] : [`app.echoToOE('ok');`]),
   ].join("\n");
 }
 

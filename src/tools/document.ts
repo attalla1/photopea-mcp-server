@@ -148,6 +148,7 @@ export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge)
       width: z.number().positive().describe("New canvas width in pixels"),
       height: z.number().positive().describe("New canvas height in pixels"),
       anchor: z.enum(ANCHORS).default("center").describe("Where the existing content stays, e.g. 'center' adds space equally on all sides, 'top-left' adds it to the right and bottom"),
+      fillColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Color for the added area, e.g. #ffffff for a white border. Adds a solid 'Canvas Fill' layer at the bottom. Omit for transparent."),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   }, async (params) => {

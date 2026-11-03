@@ -102,12 +102,12 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
   // photopea_fill_placeholder
   server.registerTool("photopea_fill_placeholder", {
     title: "Fill Placeholder",
-    description: "Put an image into a template's placeholder layer: the image is scaled to cover (or fit inside) the placeholder's bounds, centered on it, placed above it and clipped to its shape. Use it for photo frames, device mockups and social post templates; use edit_text to swap the template's text.",
+    description: "Put an image into a template's placeholder layer: the image is scaled to cover (or fit inside) the placeholder's bounds, centered on it, placed above it and masked to its shape. Use it for photo frames, device mockups and social post templates; use edit_text to swap the template's text.",
     inputSchema: {
       placeholder: layerTarget.describe("Placeholder layer name (string) or index (number), e.g. a shape or pixel layer marking where the image goes"),
       source: z.string().describe("URL or absolute local file path of the image"),
       fit: z.enum(["cover", "contain"]).default("cover").describe("'cover' fills the placeholder and crops overflow, 'contain' fits the whole image inside it"),
-      clip: z.boolean().default(true).describe("Clip the image to the placeholder's shape"),
+      mask: z.boolean().default(true).describe("Mask the image to the placeholder's shape (a layer mask, so layers added later can't break it)"),
       name: z.string().optional().describe("Display name for the new image layer"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },

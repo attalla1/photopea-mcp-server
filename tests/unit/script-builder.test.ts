@@ -377,6 +377,13 @@ describe("script-builder: canvas operations", () => {
     expect(buildResizeCanvas({ width: 10, height: 20, anchor: "center" })).toContain("AnchorPosition.MIDDLECENTER");
   });
 
+  it("buildResizeCanvas fills the added area under everything when asked", () => {
+    const filled = buildResizeCanvas({ width: 10, height: 20, anchor: "center", fillColor: "#ffffff" });
+    expect(filled).toContain("hexValue = 'ffffff'");
+    expect(filled).toContain("ElementPlacement.PLACEAFTER");
+    expect(buildResizeCanvas({ width: 10, height: 20, anchor: "center" })).not.toContain("Canvas Fill");
+  });
+
   it("buildTrim maps basis to TrimType", () => {
     expect(buildTrim("transparent")).toContain("TrimType.TRANSPARENT");
     expect(buildTrim("top-left-color")).toContain("TrimType.TOPLEFT");
@@ -429,12 +436,24 @@ describe("script-builder: masks, adjustment layers and styles", () => {
     expect(cleared).toContain("_c('setd')");
   });
 
-  it("buildFitToLayer covers or contains, and clips on request", () => {
-    const cover = buildFitToLayer({ placeholder: "Frame", fit: "cover", clip: true });
+  it("buildFitToLayer covers or contains, and masks to the placeholder's shape", () => {
+    const cover = buildFitToLayer({ placeholder: "Frame", fit: "cover", mask: true });
     expect(cover).toContain("Math.max(");
-    expect(cover).toContain("_l.grouped = true");
-    const contain = buildFitToLayer({ placeholder: "Frame", fit: "contain", clip: false });
+    expect(cover).toContain("_c('Trsp')"); // selection from the placeholder's pixels
+    expect(cover).toContain("_c('RvlS')"); // mask from that selection
+    expect(cover).not.toContain("grouped"); // clipping groups break when layers are inserted between
+    // the mask code declares its own _d (an ActionDescriptor), so the document must not be called _d
+    expect(cover).not.toMatch(/_d\.(selection|activeLayer)/);
+    const contain = buildFitToLayer({ placeholder: "Frame", fit: "contain", mask: false });
     expect(contain).toContain("Math.min(");
-    expect(contain).not.toContain("grouped");
+    expect(contain).not.toContain("RvlS");
+  });
+
+  it("targeted style and mask edits restore the previously active layer", () => {
+    for (const script of [buildSetLayerStyle({ target: "Photo", stroke: { color: "#000000" } }), buildLayerMask({ action: "hide_all", target: "Photo" })]) {
+      expect(script).toContain("var _prev = app.activeDocument.activeLayer;");
+      expect(script.indexOf("activeLayer = _prev")).toBeGreaterThan(script.indexOf("executeAction"));
+    }
+    expect(buildSetLayerStyle({ stroke: { color: "#000000" } })).not.toContain("_prev");
   });
 });
