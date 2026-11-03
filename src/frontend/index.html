@@ -307,6 +307,7 @@
       var pendingId       = null;
       var echoBuffer      = [];     // string messages from Photopea before "done"
       var fileBuffer      = null;   // ArrayBuffer from Photopea (last one wins)
+      var previewMaxSize  = 0;      // > 0: downscale the exported PNG before sending
 
       // -----------------------------------------------------------------------
       // Collapsible log
@@ -473,6 +474,7 @@
         pendingId   = msg.id;
         echoBuffer  = [];
         fileBuffer  = null;
+        previewMaxSize = msg.previewMaxSize || 0;
 
         sendToPhotopea(msg.script);
       }
@@ -570,11 +572,8 @@
         pendingId = null;
 
         if (fileBuffer !== null) {
-          // Binary frame: 36-char request id, then the raw file (no base64, so large PSDs fit)
-          var out = new Uint8Array(36 + fileBuffer.byteLength);
-          for (var i = 0; i < 36; i++) out[i] = id.charCodeAt(i);
-          out.set(new Uint8Array(fileBuffer), 36);
-          if (ws && ws.readyState === WebSocket.OPEN) ws.send(out);
+          if (previewMaxSize > 0) downscalePng(fileBuffer, previewMaxSize).then(function (buf) { sendFile(id, buf); });
+          else sendFile(id, fileBuffer);
         } else {
           // Script result (echoToOE strings joined)
           var resultData = echoBuffer.length > 0 ? echoBuffer.join('\n') : null;
@@ -592,6 +591,27 @@
 
         echoBuffer = [];
         fileBuffer = null;
+      }
+
+      // Binary frame: 36-char request id, then the raw file (no base64, so large PSDs fit)
+      function sendFile(id, buf) {
+        var out = new Uint8Array(36 + buf.byteLength);
+        for (var i = 0; i < 36; i++) out[i] = id.charCodeAt(i);
+        out.set(new Uint8Array(buf), 36);
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(out);
+      }
+
+      // Previews are scaled here, not in Photopea, so the document itself is never modified
+      function downscalePng(buf, max) {
+        return createImageBitmap(new Blob([buf])).then(function (bmp) {
+          var s = Math.min(1, max / Math.max(bmp.width, bmp.height));
+          if (s === 1) return buf;
+          var c = new OffscreenCanvas(Math.max(1, Math.round(bmp.width * s)), Math.max(1, Math.round(bmp.height * s)));
+          var ctx = c.getContext('2d');
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(bmp, 0, 0, c.width, c.height);
+          return c.convertToBlob({ type: 'image/png' }).then(function (b) { return b.arrayBuffer(); });
+        }).catch(function () { return buf; });
       }
 
       // -----------------------------------------------------------------------

@@ -181,7 +181,8 @@ export class PhotopeaBridge {
 
   async executeScript(
     script: string,
-    expectFiles = false
+    expectFiles = false,
+    previewMaxSize?: number
   ): Promise<BridgeResult | BridgeFileResult> {
     try {
       await this.waitForReady();
@@ -213,7 +214,7 @@ export class PhotopeaBridge {
         if (wasActive) this.processNext();
       }, timeoutMs);
 
-      const pending: PendingRequest = { id, resolve, reject, expectFiles, timer };
+      const pending: PendingRequest = { id, resolve, reject, expectFiles, previewMaxSize, timer };
 
       this.pendingScripts.set(id, script);
       this.queue.push(pending);
@@ -318,6 +319,7 @@ export class PhotopeaBridge {
       type: "execute",
       script,
       expectFiles: next.expectFiles,
+      previewMaxSize: next.previewMaxSize,
     };
 
     if (this.client.readyState === WebSocket.OPEN) {

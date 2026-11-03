@@ -92,6 +92,15 @@ describe("PhotopeaBridge", () => {
     expect((result.data as Buffer).equals(file)).toBe(true);
   });
 
+  it("forwards the preview size so the page can downscale the export", async () => {
+    clientWs.on("message", (data) => {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === "execute") clientWs.send(Buffer.concat([Buffer.from(msg.id), Buffer.from(String(msg.previewMaxSize))]));
+    });
+    const result = await bridge.executeScript("saveToOE('png');", true, 256);
+    expect(String(result.data)).toBe("256");
+  });
+
   it("fails an export that returns no file instead of reporting success", async () => {
     clientWs.on("message", (data) => {
       const msg = JSON.parse(data.toString());

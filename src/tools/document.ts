@@ -2,12 +2,16 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { PhotopeaBridge } from "../bridge/websocket-server.js";
-import type { BridgeResult } from "../bridge/types.js";
+import { ANCHORS, type BridgeResult } from "../bridge/types.js";
 import {
   buildCreateDocument,
   buildGetDocumentInfo,
   buildResizeDocument,
   buildCloseDocument,
+  buildCrop,
+  buildResizeCanvas,
+  buildTrim,
+  buildRotateCanvas,
 } from "../bridge/script-builder.js";
 import { readLocalFile, fetchUrlToBuffer, isUrl } from "../utils/file-io.js";
 
@@ -116,5 +120,72 @@ export function registerDocumentTools(server: McpServer, bridge: PhotopeaBridge)
     const result = await bridge.executeScript(script);
     if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to close document" }] };
     return { content: [{ type: "text" as const, text: "Document closed" }] };
+  });
+
+  // photopea_crop
+  server.registerTool("photopea_crop", {
+    title: "Crop",
+    description: "Crop the active document to a rectangle in pixels. Content outside the rectangle is discarded. Use get_document_info for the current size; use resize_canvas to add space instead.",
+    inputSchema: {
+      x: z.number().describe("Left edge of the crop rectangle in pixels"),
+      y: z.number().describe("Top edge of the crop rectangle in pixels"),
+      width: z.number().positive().describe("Width of the crop rectangle in pixels"),
+      height: z.number().positive().describe("Height of the crop rectangle in pixels"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  }, async (params) => {
+    bridge.sendActivity({ type: "activity", id: "", tool: "crop", summary: `Crop to ${params.width}x${params.height} at ${params.x},${params.y}` });
+    const result = await bridge.executeScript(buildCrop(params));
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to crop" }] };
+    return { content: [{ type: "text" as const, text: `Cropped to ${params.width}x${params.height}` }] };
+  });
+
+  // photopea_resize_canvas
+  server.registerTool("photopea_resize_canvas", {
+    title: "Resize Canvas",
+    description: "Change the canvas size without scaling the content: larger adds empty space, smaller cuts off edges. The anchor decides which side stays fixed. Use resize_document to scale the content instead.",
+    inputSchema: {
+      width: z.number().positive().describe("New canvas width in pixels"),
+      height: z.number().positive().describe("New canvas height in pixels"),
+      anchor: z.enum(ANCHORS).default("center").describe("Where the existing content stays, e.g. 'center' adds space equally on all sides, 'top-left' adds it to the right and bottom"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  }, async (params) => {
+    bridge.sendActivity({ type: "activity", id: "", tool: "resize_canvas", summary: `Canvas ${params.width}x${params.height} (${params.anchor})` });
+    const result = await bridge.executeScript(buildResizeCanvas(params));
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to resize canvas" }] };
+    return { content: [{ type: "text" as const, text: `Canvas resized to ${params.width}x${params.height}` }] };
+  });
+
+  // photopea_trim
+  server.registerTool("photopea_trim", {
+    title: "Trim",
+    description: "Trim empty borders from the active document: transparent pixels, or pixels matching the top-left or bottom-right corner color. Useful after removing a background or before exporting an icon.",
+    inputSchema: {
+      basis: z.enum(["transparent", "top-left-color", "bottom-right-color"]).default("transparent").describe("What counts as empty border"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  }, async (params) => {
+    bridge.sendActivity({ type: "activity", id: "", tool: "trim", summary: `Trim ${params.basis} borders` });
+    const result = await bridge.executeScript(buildTrim(params.basis));
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to trim" }] };
+    return { content: [{ type: "text" as const, text: "Document trimmed. Use get_document_info for the new size." }] };
+  });
+
+  // photopea_rotate_canvas
+  server.registerTool("photopea_rotate_canvas", {
+    title: "Rotate Canvas",
+    description: "Rotate and/or flip the whole document, all layers together. Use transform_layer to rotate a single layer instead.",
+    inputSchema: {
+      angle: z.number().optional().describe("Clockwise rotation in degrees, e.g. 90, 180, -90"),
+      flip: z.enum(["horizontal", "vertical"]).optional().describe("Mirror the document horizontally or vertically"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  }, async (params) => {
+    if (!params.angle && !params.flip) return { isError: true, content: [{ type: "text" as const, text: "Provide angle and/or flip" }] };
+    bridge.sendActivity({ type: "activity", id: "", tool: "rotate_canvas", summary: `Rotate ${params.angle ?? 0}°${params.flip ? `, flip ${params.flip}` : ""}` });
+    const result = await bridge.executeScript(buildRotateCanvas(params));
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to rotate canvas" }] };
+    return { content: [{ type: "text" as const, text: "Canvas rotated/flipped" }] };
   });
 }

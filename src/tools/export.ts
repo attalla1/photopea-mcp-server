@@ -3,14 +3,17 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { PhotopeaBridge } from "../bridge/websocket-server.js";
 import type { BridgeFileResult } from "../bridge/types.js";
+import { basename, join } from "path";
 import {
   buildExportImage,
   buildRunScript,
   buildUndo,
   buildRedo,
+  buildCloseDocument,
   escapeString,
 } from "../bridge/script-builder.js";
-import { writeLocalFile } from "../utils/file-io.js";
+import { writeLocalFile, isUrl } from "../utils/file-io.js";
+import { loadImageDocument } from "./image.js";
 
 export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): void {
   // 30. photopea_export_image
@@ -37,6 +40,66 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
     }
 
     return { content: [{ type: "text" as const, text: `Image exported to: ${params.outputPath}` }] };
+  });
+
+  // photopea_get_preview
+  server.registerTool("photopea_get_preview", {
+    title: "Get Preview",
+    description: "See the active document: returns a PNG snapshot, downscaled to maxSize, so you can check layout, colors and text visually. The document is not modified. Call it after visual changes, before exporting.",
+    inputSchema: {
+      maxSize: z.number().int().min(64).max(2048).default(1024).describe("Longest side of the preview in pixels; smaller documents are not upscaled"),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async (params) => {
+    bridge.sendActivity({ type: "activity", id: "", tool: "get_preview", summary: "Preview document" });
+    const result = await bridge.executeScript(buildExportImage({ format: "png", outputPath: "" }), true, params.maxSize);
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to render preview" }] };
+    return { content: [{ type: "image" as const, data: (result as BridgeFileResult).data.toString("base64"), mimeType: "image/png" }] };
+  });
+
+  // photopea_batch_process
+  server.registerTool("photopea_batch_process", {
+    title: "Batch Process",
+    description: "Run the same edit over many images: opens each input, optionally runs a Photopea script on it, exports it to outputDir as <input name>.<format> (repeated names get -2, -3) and closes it. Use it for bulk resizing, format conversion or watermarking. Existing files with the same name are overwritten.",
+    inputSchema: {
+      inputs: z.array(z.string()).min(1).describe("URLs or absolute local file paths of the images"),
+      outputDir: z.string().describe("Absolute directory path for the exported files (created if missing)"),
+      format: z.enum(["png", "jpg", "webp", "psd"]).describe("Output format"),
+      quality: z.number().min(1).max(100).optional().describe("Compression quality for JPG and WebP (1-100)"),
+      script: z.string().optional().describe("Photopea JavaScript to run on each image before export, e.g. \"app.activeDocument.resizeImage(800, 600);\""),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+  }, async (params) => {
+    const lines: string[] = [];
+    const usedNames = new Set<string>();
+    let failed = 0;
+    for (const source of params.inputs) {
+      const base = basename(isUrl(source) ? new URL(source).pathname : source).replace(/\.[^.]*$/, "") || "image";
+      let name = base;
+      for (let i = 2; usedNames.has(name); i++) name = `${base}-${i}`; // a/photo.png and b/photo.png must not overwrite each other
+      usedNames.add(name);
+      const outputPath = join(params.outputDir, `${name}.${params.format}`);
+      bridge.sendActivity({ type: "activity", id: "", tool: "batch_process", summary: `${lines.length + 1}/${params.inputs.length}: ${name}` });
+      const loadError = await loadImageDocument(bridge, source);
+      let error = loadError;
+      if (!loadError) {
+        const ran = params.script ? await bridge.executeScript(buildRunScript(params.script)) : { success: true, error: null };
+        const exported = ran.success ? await bridge.executeScript(buildExportImage({ format: params.format, quality: params.quality, outputPath }), true) : ran;
+        error = exported.success ? null : exported.error || "Failed";
+        if (!error) {
+          try {
+            await writeLocalFile(outputPath, (exported as BridgeFileResult).data);
+          } catch (err) {
+            error = (err as Error).message;
+          }
+        }
+        await bridge.executeScript(buildCloseDocument({ save: false })); // don't pile up open documents
+      }
+      if (error) failed++;
+      lines.push(error ? `FAILED ${source}: ${error}` : `ok ${outputPath}`);
+    }
+    const summary = `${params.inputs.length - failed}/${params.inputs.length} exported`;
+    return { isError: failed === params.inputs.length, content: [{ type: "text" as const, text: [summary, ...lines].join("\n") }] };
   });
 
   // photopea_load_font
