@@ -28,6 +28,16 @@ import {
   buildFillSelection,
   buildClearSelection,
   buildExportImage,
+  buildCrop,
+  buildResizeCanvas,
+  buildTrim,
+  buildRotateCanvas,
+  buildLayerMask,
+  buildSetClippingMask,
+  buildAddAdjustmentLayer,
+  buildMergeLayers,
+  buildSetLayerStyle,
+  buildFitToLayer,
   buildRunScript,
   buildUndo,
   buildRedo,
@@ -221,7 +231,9 @@ describe("script-builder: shape operations", () => {
 
   it("buildAddShape ellipse", () => {
     const script = buildAddShape({ type: "ellipse", bounds: { x: 50, y: 50, width: 100, height: 80 }, fillColor: "#ff0000" });
-    expect(script).toContain("selectEllipse");
+    // Photopea has no selectEllipse: the ellipse is a polygon whose points span the bounds
+    expect(script).toContain("selection.select([[150,90]");
+    expect(script).not.toContain("selectEllipse");
     expect(script).toContain("50");
     expect(script).toContain("150"); // x + width
     expect(script).toContain("130"); // y + height
@@ -351,5 +363,78 @@ describe("script-builder: utility operations", () => {
     expect(script).toContain("historyStates");
     expect(script).toContain("echoToOE");
     expect(script).toContain("2");
+  });
+});
+
+describe("script-builder: canvas operations", () => {
+  it("buildCrop converts x/y/width/height to bounds", () => {
+    expect(buildCrop({ x: 10, y: 20, width: 100, height: 50 })).toContain("crop([10, 20, 110, 70])");
+  });
+
+  it("buildResizeCanvas maps anchors to AnchorPosition", () => {
+    expect(buildResizeCanvas({ width: 10, height: 20, anchor: "bottom-right" })).toContain("resizeCanvas(10, 20, AnchorPosition.BOTTOMRIGHT)");
+    expect(buildResizeCanvas({ width: 10, height: 20, anchor: "top" })).toContain("AnchorPosition.TOPCENTER");
+    expect(buildResizeCanvas({ width: 10, height: 20, anchor: "center" })).toContain("AnchorPosition.MIDDLECENTER");
+  });
+
+  it("buildTrim maps basis to TrimType", () => {
+    expect(buildTrim("transparent")).toContain("TrimType.TRANSPARENT");
+    expect(buildTrim("top-left-color")).toContain("TrimType.TOPLEFT");
+  });
+
+  it("buildRotateCanvas rotates and/or flips", () => {
+    const both = buildRotateCanvas({ angle: 90, flip: "vertical" });
+    expect(both).toContain("rotateCanvas(90)");
+    expect(both).toContain("flipCanvas(Direction.VERTICAL)");
+    expect(buildRotateCanvas({ flip: "horizontal" })).not.toContain("rotateCanvas");
+  });
+});
+
+describe("script-builder: masks, adjustment layers and styles", () => {
+  it("buildLayerMask adds masks with the right mode and deletes them", () => {
+    expect(buildLayerMask({ action: "hide_all" })).toContain("_c('HdAl')");
+    expect(buildLayerMask({ action: "from_selection" })).toContain("_c('RvlS')");
+    const del = buildLayerMask({ action: "delete", target: "Photo" });
+    expect(del).toContain("_c('Dlt ')");
+    expect(del).not.toContain("Usng");
+    expect(del).toContain("activeLayer = app.activeDocument.layers.getByName('Photo')");
+  });
+
+  it("buildSetClippingMask sets grouped", () => {
+    expect(buildSetClippingMask({ target: "Photo", enabled: true })).toContain(".grouped = true");
+    expect(buildSetClippingMask({ target: 0, enabled: false })).toContain("layers[0].grouped = false");
+  });
+
+  it("buildAddAdjustmentLayer puts settings in the make descriptor", () => {
+    expect(buildAddAdjustmentLayer({ type: "brightness", brightness: 40 })).toContain("_t.putInteger(_c('Brgh'), 40)");
+    expect(buildAddAdjustmentLayer({ type: "hue_sat", hue: 30 })).toContain("_a.putInteger(_s('hue'), 30)");
+    const levels = buildAddAdjustmentLayer({ type: "levels", inputMin: 10, inputMax: 200, gamma: 1.2 });
+    expect(levels).toContain("_in.putInteger(10); _in.putInteger(200)");
+    expect(levels).toContain("_c('Gmm '), 1.2");
+  });
+
+  it("buildMergeLayers picks the merge call", () => {
+    expect(buildMergeLayers("down")).toContain("activeLayer.merge()");
+    expect(buildMergeLayers("flatten")).toContain("flatten()");
+  });
+
+  it("buildSetLayerStyle includes only the requested effects", () => {
+    const style = buildSetLayerStyle({ dropShadow: { color: "#ff0000" }, stroke: { color: "#00ff00", position: "inside" } });
+    expect(style).toContain("_fx.putObject(_c('DrSh')");
+    expect(style).toContain("_c('Rd  '), 255");
+    expect(style).toContain("_c('InsF')");
+    expect(style).not.toContain("_c('OrGl')");
+    const cleared = buildSetLayerStyle({});
+    expect(cleared).not.toMatch(/DrSh'\)|FrFX'\)|OrGl'\)/);
+    expect(cleared).toContain("_c('setd')");
+  });
+
+  it("buildFitToLayer covers or contains, and clips on request", () => {
+    const cover = buildFitToLayer({ placeholder: "Frame", fit: "cover", clip: true });
+    expect(cover).toContain("Math.max(");
+    expect(cover).toContain("_l.grouped = true");
+    const contain = buildFitToLayer({ placeholder: "Frame", fit: "contain", clip: false });
+    expect(contain).toContain("Math.min(");
+    expect(contain).not.toContain("grouped");
   });
 });

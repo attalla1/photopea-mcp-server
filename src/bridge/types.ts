@@ -8,6 +8,7 @@ export interface ExecuteMessage {
   type: "execute";
   script: string;
   expectFiles: boolean;
+  previewMaxSize?: number; // the page downscales the exported PNG to this longest side
 }
 
 /** Server -> Client: load a binary file into Photopea */
@@ -66,6 +67,7 @@ export interface PendingRequest {
   resolve: (value: BridgeResult | BridgeFileResult) => void;
   reject: (reason: Error) => void;
   expectFiles: boolean;
+  previewMaxSize?: number;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -232,6 +234,56 @@ export interface ExportImageParams {
   format: "png" | "jpg" | "webp" | "psd" | "svg";
   quality?: number;
   outputPath: string;
+}
+
+export interface CropParams {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ResizeCanvasParams {
+  width: number;
+  height: number;
+  anchor: (typeof ANCHORS)[number];
+}
+
+export const ANCHORS = ["top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"] as const;
+
+export interface RotateCanvasParams {
+  angle?: number;
+  flip?: "horizontal" | "vertical";
+}
+
+export interface LayerMaskParams {
+  action: "reveal_all" | "hide_all" | "from_selection" | "delete";
+  target?: string | number;
+}
+
+export interface AdjustmentLayerParams {
+  type: "brightness" | "hue_sat" | "levels";
+  brightness?: number;
+  contrast?: number;
+  hue?: number;
+  saturation?: number;
+  lightness?: number;
+  inputMin?: number;
+  inputMax?: number;
+  gamma?: number;
+}
+
+export interface LayerStyleParams {
+  target?: string | number;
+  dropShadow?: { color: string; opacity?: number; angle?: number; distance?: number; size?: number };
+  outerGlow?: { color: string; opacity?: number; size?: number };
+  stroke?: { color: string; size?: number; position?: "outside" | "inside" | "center"; opacity?: number };
+}
+
+export interface FitToLayerParams {
+  placeholder: string | number;
+  fit: "cover" | "contain";
+  clip: boolean;
 }
 
 // --- Layer Info Types (returned by get_layers) ---
