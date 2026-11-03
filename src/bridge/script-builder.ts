@@ -23,7 +23,15 @@ import type {
   ModifySelectionParams,
   FillSelectionParams,
   ExportImageParams,
+  CropParams,
+  ResizeCanvasParams,
+  RotateCanvasParams,
+  LayerMaskParams,
+  AdjustmentLayerParams,
+  LayerStyleParams,
+  FitToLayerParams,
 } from "./types.js";
+import { ANCHORS } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Exported helpers
@@ -59,6 +67,15 @@ function layerRef(target: string | number): string {
     return `app.activeDocument.layers[${target}]`;
   }
   return `app.activeDocument.layers.getByName('${escapeString(target)}')`;
+}
+
+/** Ellipse as a 64-point polygon: Photopea has no selectEllipse, but selection.select(points) works. */
+function ellipsePoints(x: number, y: number, width: number, height: number): string {
+  const pts = Array.from({ length: 64 }, (_, i) => {
+    const a = (i / 64) * 2 * Math.PI;
+    return `[${+(x + width / 2 + (width / 2) * Math.cos(a)).toFixed(2)},${+(y + height / 2 + (height / 2) * Math.sin(a)).toFixed(2)}]`;
+  });
+  return `[${pts.join(",")}]`;
 }
 
 /** Map a human-readable blend mode string to the Photopea BlendMode enum value. */
@@ -515,10 +532,7 @@ export function buildAddShape(params: AddShapeParams): string {
 
   // Build the selection based on shape type
   if (type === "ellipse") {
-    lines.push(
-      `app.activeDocument.selection.selectEllipse(` +
-        `{left: ${x}, top: ${y}, right: ${x + width}, bottom: ${y + height}});`
-    );
+    lines.push(`app.activeDocument.selection.select(${ellipsePoints(x, y, width, height)});`);
   } else {
     // rectangle and polygon both use a rectangular selection via polygon points
     lines.push(
@@ -727,10 +741,7 @@ export function buildMakeSelection(params: MakeSelectionParams): string {
     case "ellipse":
       if (bounds) {
         const { x, y, width, height } = bounds;
-        lines.push(
-          `${sel}.selectEllipse(` +
-            `{left: ${x}, top: ${y}, right: ${x + width}, bottom: ${y + height}}, SelectionType.REPLACE, ${feather});`
-        );
+        lines.push(`${sel}.select(${ellipsePoints(x, y, width, height)}, SelectionType.REPLACE, ${feather});`);
       }
       break;
     case "rect":
@@ -795,6 +806,166 @@ export function buildFillSelection(params: FillSelectionParams): string {
 
 export function buildClearSelection(): string {
   return `app.activeDocument.selection.deselect();\napp.echoToOE('ok');`;
+}
+
+// ---------------------------------------------------------------------------
+// Canvas operations
+// ---------------------------------------------------------------------------
+
+export function buildCrop(params: CropParams): string {
+  const { x, y, width, height } = params;
+  return `app.activeDocument.crop([${x}, ${y}, ${x + width}, ${y + height}]);\napp.echoToOE('ok');`;
+}
+
+const ANCHOR_ENUM = ["TOPLEFT", "TOPCENTER", "TOPRIGHT", "MIDDLELEFT", "MIDDLECENTER", "MIDDLERIGHT", "BOTTOMLEFT", "BOTTOMCENTER", "BOTTOMRIGHT"];
+
+export function buildResizeCanvas(params: ResizeCanvasParams): string {
+  const anchor = ANCHOR_ENUM[ANCHORS.indexOf(params.anchor)];
+  return `app.activeDocument.resizeCanvas(${params.width}, ${params.height}, AnchorPosition.${anchor});\napp.echoToOE('ok');`;
+}
+
+export function buildTrim(basis: "transparent" | "top-left-color" | "bottom-right-color"): string {
+  const type = { transparent: "TRANSPARENT", "top-left-color": "TOPLEFT", "bottom-right-color": "BOTTOMRIGHT" }[basis];
+  return `app.activeDocument.trim(TrimType.${type}, true, true, true, true);\napp.echoToOE('ok');`;
+}
+
+export function buildRotateCanvas(params: RotateCanvasParams): string {
+  const lines: string[] = [];
+  if (params.angle) lines.push(`app.activeDocument.rotateCanvas(${params.angle});`);
+  if (params.flip) lines.push(`app.activeDocument.flipCanvas(Direction.${params.flip.toUpperCase()});`);
+  lines.push(`app.echoToOE('ok');`);
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Masks, adjustment layers and layer styles (Action Manager descriptors)
+// ---------------------------------------------------------------------------
+
+const AM_IDS = `var _c = function (k) { return app.charIDToTypeID(k); }; var _s = function (k) { return app.stringIDToTypeID(k); };`;
+
+function selectTarget(target?: string | number): string {
+  return target === undefined ? "" : `app.activeDocument.activeLayer = ${layerRef(target)};`;
+}
+
+export function buildLayerMask(params: LayerMaskParams): string {
+  const lines = [AM_IDS, selectTarget(params.target), `var _d = new ActionDescriptor();`, `var _r = new ActionReference();`];
+  lines.push(`_r.putEnumerated(_c('Chnl'), _c('Chnl'), _c('Msk '));`);
+  if (params.action === "delete") {
+    lines.push(`_d.putReference(_c('null'), _r);`, `app.executeAction(_c('Dlt '), _d, DialogModes.NO);`);
+  } else {
+    const using = { reveal_all: "RvlA", hide_all: "HdAl", from_selection: "RvlS" }[params.action];
+    lines.push(
+      `_d.putClass(_c('Nw  '), _c('Chnl'));`,
+      `_d.putReference(_c('At  '), _r);`,
+      `_d.putEnumerated(_c('Usng'), _c('UsrM'), _c('${using}'));`,
+      `app.executeAction(_c('Mk  '), _d, DialogModes.NO);`,
+    );
+  }
+  lines.push(`app.echoToOE('ok');`);
+  return lines.join("\n");
+}
+
+export function buildSetClippingMask(params: LayerTarget & { enabled: boolean }): string {
+  return `${layerRef(params.target)}.grouped = ${params.enabled};\napp.echoToOE('ok');`;
+}
+
+export function buildAddAdjustmentLayer(params: AdjustmentLayerParams): string {
+  // Settings go straight into the "make" descriptor; a separate "set" step is ignored for brightness
+  let typeClass: string;
+  let body: string;
+  if (params.type === "brightness") {
+    typeClass = `_c('BrgC')`;
+    body = `_t.putInteger(_c('Brgh'), ${params.brightness ?? 0}); _t.putInteger(_c('Cntr'), ${params.contrast ?? 0}); _t.putBoolean(_s('useLegacy'), false);`;
+  } else if (params.type === "hue_sat") {
+    typeClass = `_s('hueSaturation')`;
+    body = `_t.putBoolean(_s('colorize'), false); var _l = new ActionList(); var _a = new ActionDescriptor(); _a.putInteger(_s('hue'), ${params.hue ?? 0}); _a.putInteger(_s('saturation'), ${params.saturation ?? 0}); _a.putInteger(_s('lightness'), ${params.lightness ?? 0}); _l.putObject(_s('hueSatAdjustmentV2'), _a); _t.putList(_s('adjustment'), _l);`;
+  } else {
+    typeClass = `_c('Lvls')`;
+    body = `var _l = new ActionList(); var _a = new ActionDescriptor(); var _ch = new ActionReference(); _ch.putEnumerated(_c('Chnl'), _c('Chnl'), _c('Cmps')); _a.putReference(_c('Chnl'), _ch); var _in = new ActionList(); _in.putInteger(${params.inputMin ?? 0}); _in.putInteger(${params.inputMax ?? 255}); _a.putList(_c('Inpt'), _in); _a.putDouble(_c('Gmm '), ${params.gamma ?? 1}); _l.putObject(_s('levelsAdjustment'), _a); _t.putList(_s('adjustment'), _l);`;
+  }
+  return [
+    AM_IDS,
+    `var _mk = new ActionDescriptor(); var _mr = new ActionReference(); _mr.putClass(_c('AdjL')); _mk.putReference(_c('null'), _mr);`,
+    `var _u = new ActionDescriptor(); var _t = new ActionDescriptor();`,
+    body,
+    `_u.putObject(_c('Type'), ${typeClass}, _t); _mk.putObject(_c('Usng'), _c('AdjL'), _u);`,
+    `app.executeAction(_c('Mk  '), _mk, DialogModes.NO);`,
+    `app.echoToOE('ok');`,
+  ].join("\n");
+}
+
+export function buildMergeLayers(mode: "down" | "flatten"): string {
+  const op = { down: "activeLayer.merge()", flatten: "flatten()" }[mode];
+  return `app.activeDocument.${op};\napp.echoToOE('ok');`;
+}
+
+/** Replace the layer's effects with the given ones; no effects clears the style. */
+export function buildSetLayerStyle(params: LayerStyleParams): string {
+  const color = (v: string, hex: string) => {
+    const { r, g, b } = hexToRgb(hex);
+    return `var _k = new ActionDescriptor(); _k.putDouble(_c('Rd  '), ${r}); _k.putDouble(_c('Grn '), ${g}); _k.putDouble(_c('Bl  '), ${b}); ${v}.putObject(_c('Clr '), _c('RGBC'), _k);`;
+  };
+  const lines = [
+    AM_IDS,
+    selectTarget(params.target),
+    // Photopea crashes on shadow/glow descriptors that lack noise, anti-alias and contour fields
+    `function _base(e, opacity) { e.putBoolean(_c('enab'), true); e.putEnumerated(_c('Md  '), _c('BlnM'), _c('Nrml')); e.putUnitDouble(_c('Opct'), _c('#Prc'), opacity); e.putUnitDouble(_c('Nose'), _c('#Prc'), 0); e.putBoolean(_c('AntA'), false);`,
+    `  var tr = new ActionDescriptor(); tr.putString(_c('Nm  '), 'Linear'); var cv = new ActionList();`,
+    `  var p1 = new ActionDescriptor(); p1.putDouble(_c('Hrzn'), 0); p1.putDouble(_c('Vrtc'), 0); cv.putObject(_c('CrPt'), p1);`,
+    `  var p2 = new ActionDescriptor(); p2.putDouble(_c('Hrzn'), 255); p2.putDouble(_c('Vrtc'), 255); cv.putObject(_c('CrPt'), p2);`,
+    `  tr.putList(_c('Crv '), cv); e.putObject(_c('TrnS'), _c('ShpC'), tr); }`,
+    `var _fx = new ActionDescriptor(); _fx.putUnitDouble(_c('Scl '), _c('#Prc'), 100);`,
+  ];
+  const { dropShadow: ds, outerGlow: og, stroke: st } = params;
+  if (ds) {
+    lines.push(
+      `var _e = new ActionDescriptor(); _base(_e, ${ds.opacity ?? 75}); ${color("_e", ds.color)}`,
+      `_e.putBoolean(_c('uglg'), false); _e.putUnitDouble(_c('lagl'), _c('#Ang'), ${ds.angle ?? 135}); _e.putUnitDouble(_c('Dstn'), _c('#Pxl'), ${ds.distance ?? 10});`,
+      `_e.putUnitDouble(_c('Ckmt'), _c('#Pxl'), 0); _e.putUnitDouble(_c('blur'), _c('#Pxl'), ${ds.size ?? 10}); _e.putBoolean(_s('layerConceals'), true);`,
+      `_fx.putObject(_c('DrSh'), _c('DrSh'), _e);`,
+    );
+  }
+  if (og) {
+    lines.push(
+      `var _e = new ActionDescriptor(); _base(_e, ${og.opacity ?? 75}); ${color("_e", og.color)}`,
+      `_e.putUnitDouble(_c('Ckmt'), _c('#Pxl'), 0); _e.putUnitDouble(_c('blur'), _c('#Pxl'), ${og.size ?? 20}); _e.putEnumerated(_c('GlwT'), _c('BETE'), _c('SfBL')); _e.putUnitDouble(_c('ShdN'), _c('#Prc'), 0); _e.putUnitDouble(_c('Inpr'), _c('#Prc'), 50);`,
+      `_fx.putObject(_c('OrGl'), _c('OrGl'), _e);`,
+    );
+  }
+  if (st) {
+    const style = { outside: "OutF", inside: "InsF", center: "CtrF" }[st.position ?? "outside"];
+    lines.push(
+      `var _e = new ActionDescriptor(); _e.putBoolean(_c('enab'), true); _e.putEnumerated(_c('Styl'), _c('FStl'), _c('${style}')); _e.putEnumerated(_c('PntT'), _c('FrFl'), _c('SClr'));`,
+      `_e.putEnumerated(_c('Md  '), _c('BlnM'), _c('Nrml')); _e.putUnitDouble(_c('Opct'), _c('#Prc'), ${st.opacity ?? 100}); _e.putUnitDouble(_c('Sz  '), _c('#Pxl'), ${st.size ?? 3}); ${color("_e", st.color)}`,
+      `_fx.putObject(_c('FrFX'), _c('FrFX'), _e);`,
+    );
+  }
+  lines.push(
+    `var _d = new ActionDescriptor(); var _r = new ActionReference(); _r.putProperty(_c('Prpr'), _c('Lefx')); _r.putEnumerated(_c('Lyr '), _c('Ordn'), _c('Trgt')); _d.putReference(_c('null'), _r);`,
+    `_d.putObject(_c('T   '), _c('Lefx'), _fx); app.executeAction(_c('setd'), _d, DialogModes.NO);`,
+    `app.echoToOE('ok');`,
+  );
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Templates
+// ---------------------------------------------------------------------------
+
+/** Scale the active layer to cover/contain the placeholder's bounds, center it above the placeholder, optionally clip to it. */
+export function buildFitToLayer(params: FitToLayerParams): string {
+  return [
+    `var _d = app.activeDocument; var _p = ${layerRef(params.placeholder)}; var _l = _d.activeLayer;`,
+    // Photopea's bound values add up wrongly with "+", so convert them to plain numbers first
+    `function _n(b) { return [b[0] * 1, b[1] * 1, b[2] * 1, b[3] * 1]; }`,
+    `var _pb = _n(_p.bounds), _lb = _n(_l.bounds);`,
+    `var _f = Math.${params.fit === "cover" ? "max" : "min"}((_pb[2] - _pb[0]) / (_lb[2] - _lb[0]), (_pb[3] - _pb[1]) / (_lb[3] - _lb[1])) * 100;`,
+    `_l.resize(_f, _f, AnchorPosition.MIDDLECENTER); _lb = _n(_l.bounds);`,
+    `_l.translate((_pb[0] + _pb[2] - _lb[0] - _lb[2]) / 2, (_pb[1] + _pb[3] - _lb[1] - _lb[3]) / 2);`,
+    `_l.move(_p, ElementPlacement.PLACEBEFORE);`,
+    params.clip ? `_l.grouped = true;` : "",
+    `app.echoToOE('ok');`,
+  ].join("\n");
 }
 
 // ---------------------------------------------------------------------------

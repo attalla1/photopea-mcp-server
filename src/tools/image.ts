@@ -11,12 +11,37 @@ import {
   buildModifySelection,
   buildFillSelection,
   buildClearSelection,
+  buildFitToLayer,
+  buildSelectLayer,
   escapeString,
 } from "../bridge/script-builder.js";
 import { readLocalFile, fetchUrlToBuffer, isUrl } from "../utils/file-io.js";
 
 const layerTarget = z.union([z.string(), z.number()]).describe("Layer name (string) or index (number)");
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/).describe("Color as hex string (e.g. #ff0000)");
+
+/** Fetch an image and open it in Photopea as its own document. Returns an error message, or null on success. */
+export async function loadImageDocument(bridge: PhotopeaBridge, source: string): Promise<string | null> {
+  // Fetched server-side: Photopea's async app.open(url) sends "done" before the file loads
+  let fileData: Buffer;
+  try {
+    fileData = isUrl(source) ? await fetchUrlToBuffer(source) : await readLocalFile(source);
+  } catch (err) {
+    return (err as Error).message;
+  }
+  const loadResult = await bridge.loadFile(fileData, source.split("/").pop() || "image");
+  return loadResult.success ? null : loadResult.error || "Failed to load image";
+}
+
+// Copy the loaded image document into the previously active document as a new layer.
+// Copy merged preserves transparency (unlike flatten/mergeVisible).
+const PASTE_AS_LAYER = [
+  `var _srcDoc = app.activeDocument;`,
+  `_srcDoc.selection.selectAll();`,
+  `_srcDoc.selection.copy(true);`,
+  `_srcDoc.close(2);`,
+  `app.activeDocument.paste();`,
+];
 
 export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): void {
   // 19. photopea_place_image
@@ -31,35 +56,16 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
       height: z.number().positive().optional().describe("Resize to this height in pixels (preserves aspect ratio if only one dimension is set)"),
       name: z.string().optional().describe("Display name for the placed layer in the layers panel"),
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   }, async (params) => {
     const { source } = params;
     bridge.sendActivity({ type: "activity", id: "", tool: "place_image", summary: `Place image: ${source}` });
 
-    // Step 1: Fetch the file data (server-side for both URLs and local files)
-    // This avoids Photopea's async app.open(url) which sends "done" before the file loads.
-    let fileData: Buffer;
-    try {
-      fileData = isUrl(source) ? await fetchUrlToBuffer(source) : await readLocalFile(source);
-    } catch (err) {
-      return { isError: true, content: [{ type: "text" as const, text: (err as Error).message }] };
-    }
+    const loadError = await loadImageDocument(bridge, source);
+    if (loadError) return { isError: true, content: [{ type: "text" as const, text: loadError }] };
 
-    // Step 2: Send ArrayBuffer to Photopea (opens as new document synchronously)
-    const filename = source.split("/").pop() || "image";
-    const loadResult = await bridge.loadFile(fileData, filename);
-    if (!loadResult.success) return { isError: true, content: [{ type: "text" as const, text: loadResult.error || "Failed to load image" }] };
-
-    // Step 3: Duplicate layer into target doc, close source, position in target
     {
-      const lines = [
-        `var _srcDoc = app.activeDocument;`,
-        // Copy merged preserves transparency (unlike flatten/mergeVisible)
-        `_srcDoc.selection.selectAll();`,
-        `_srcDoc.selection.copy(true);`,
-        `_srcDoc.close(2);`,
-        `app.activeDocument.paste();`,
-      ];
+      const lines = [...PASTE_AS_LAYER];
 
       const safeName = params.name ? escapeString(params.name) : "";
       // Helper to extract numeric value from bounds (may be UnitValue objects or raw numbers)
@@ -93,13 +99,40 @@ export function registerImageTools(server: McpServer, bridge: PhotopeaBridge): v
     return { content: [{ type: "text" as const, text: `Image placed: ${source}` }] };
   });
 
+  // photopea_fill_placeholder
+  server.registerTool("photopea_fill_placeholder", {
+    title: "Fill Placeholder",
+    description: "Put an image into a template's placeholder layer: the image is scaled to cover (or fit inside) the placeholder's bounds, centered on it, placed above it and clipped to its shape. Use it for photo frames, device mockups and social post templates; use edit_text to swap the template's text.",
+    inputSchema: {
+      placeholder: layerTarget.describe("Placeholder layer name (string) or index (number), e.g. a shape or pixel layer marking where the image goes"),
+      source: z.string().describe("URL or absolute local file path of the image"),
+      fit: z.enum(["cover", "contain"]).default("cover").describe("'cover' fills the placeholder and crops overflow, 'contain' fits the whole image inside it"),
+      clip: z.boolean().default(true).describe("Clip the image to the placeholder's shape"),
+      name: z.string().optional().describe("Display name for the new image layer"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  }, async (params) => {
+    bridge.sendActivity({ type: "activity", id: "", tool: "fill_placeholder", summary: `Fill ${params.placeholder} with ${params.source}` });
+    // Check the placeholder before pasting, so a wrong name doesn't leave a stray image layer (paste then lands right above it)
+    const found = await bridge.executeScript(buildSelectLayer({ target: params.placeholder }));
+    if (!found.success) return { isError: true, content: [{ type: "text" as const, text: `Placeholder layer not found: ${params.placeholder}. Use get_layers to list layer names.` }] };
+    const loadError = await loadImageDocument(bridge, params.source);
+    if (loadError) return { isError: true, content: [{ type: "text" as const, text: loadError }] };
+    const lines = [...PASTE_AS_LAYER];
+    if (params.name) lines.push(`app.activeDocument.activeLayer.name = '${escapeString(params.name)}';`);
+    lines.push(buildFitToLayer(params));
+    const result = await bridge.executeScript(lines.join("\n"));
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to fill placeholder" }] };
+    return { content: [{ type: "text" as const, text: `Placeholder ${params.placeholder} filled with ${params.source}` }] };
+  });
+
   // 20. photopea_apply_adjustment
   server.registerTool("photopea_apply_adjustment", {
     title: "Apply Adjustment",
     description: "Apply a destructive image adjustment to the active layer's pixel data. Use select_layer to target a specific layer first. Modifies pixels directly — use undo to revert if needed.",
     inputSchema: {
       type: z.enum(["brightness", "hue_sat", "levels", "curves"]).describe("Adjustment type: 'brightness' for brightness/contrast, 'hue_sat' for hue/saturation/lightness, 'levels' for input levels, 'curves' for tone curves"),
-      settings: z.record(z.union([z.number(), z.string(), z.boolean()])).optional().describe("Key-value settings for the adjustment. For brightness: { brightness: -100..100, contrast: -100..100 }. For hue_sat: { hue: -180..180, saturation: -100..100, lightness: -100..100 }. For levels: { inputBlack: 0..255, inputWhite: 0..255 }"),
+      settings: z.record(z.union([z.number(), z.string(), z.boolean()])).optional().describe("Key-value settings for the adjustment. For brightness: { brightness: -100..100, contrast: -100..100 }. For hue_sat: { hue: -180..180, saturation: -100..100, lightness: -100..100 }. For levels: { inputMin: 0..255, inputMax: 0..255, gamma: 0.1..9.99 }"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (params) => {

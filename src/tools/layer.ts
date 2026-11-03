@@ -14,10 +14,17 @@ import {
   buildReorderLayer,
   buildGroupLayers,
   buildGetLayers,
+  buildLayerMask,
+  buildSetClippingMask,
+  buildAddAdjustmentLayer,
+  buildMergeLayers,
+  buildSetLayerStyle,
   escapeString,
 } from "../bridge/script-builder.js";
 
 const layerTarget = z.union([z.string(), z.number()]).describe("Layer name (string) or index (number)");
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/).describe("Hex color, e.g. #000000");
+const percent = z.number().min(0).max(100);
 
 export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): void {
   // 6. photopea_add_layer
@@ -214,5 +221,109 @@ export function registerLayerTools(server: McpServer, bridge: PhotopeaBridge): v
     if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to get layers" }] };
     const layersResult = result as BridgeResult;
     return { content: [{ type: "text" as const, text: layersResult.data || "[]" }] };
+  });
+
+  // photopea_layer_mask
+  server.registerTool("photopea_layer_mask", {
+    title: "Layer Mask",
+    description: "Add or delete a layer mask, which hides parts of a layer without erasing pixels. 'from_selection' shows only the current selection (use make_selection first). Acts on the target layer, or the active layer if omitted.",
+    inputSchema: {
+      action: z.enum(["reveal_all", "hide_all", "from_selection", "delete"]).describe("'reveal_all' adds a mask that shows everything, 'hide_all' one that hides everything, 'from_selection' one that shows the selection, 'delete' removes the mask"),
+      target: layerTarget.optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, async (params) => {
+    bridge.sendActivity({ type: "activity", id: "", tool: "layer_mask", summary: `Layer mask: ${params.action}` });
+    const result = await bridge.executeScript(buildLayerMask(params));
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to change layer mask" }] };
+    return { content: [{ type: "text" as const, text: `Layer mask: ${params.action}` }] };
+  });
+
+  // photopea_set_clipping_mask
+  server.registerTool("photopea_set_clipping_mask", {
+    title: "Set Clipping Mask",
+    description: "Clip a layer to the layer directly below it, so it only shows where that layer has pixels (e.g. a photo or texture confined to a text or shape). Set enabled to false to release it.",
+    inputSchema: {
+      target: layerTarget,
+      enabled: z.boolean().default(true).describe("true clips the layer to the one below, false releases it"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async (params) => {
+    bridge.sendActivity({ type: "activity", id: "", tool: "set_clipping_mask", summary: `${params.enabled ? "Clip" : "Release"} ${params.target}` });
+    const result = await bridge.executeScript(buildSetClippingMask(params));
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to set clipping mask" }] };
+    return { content: [{ type: "text" as const, text: `Clipping ${params.enabled ? "enabled" : "released"} for ${params.target}` }] };
+  });
+
+  // photopea_add_adjustment_layer
+  server.registerTool("photopea_add_adjustment_layer", {
+    title: "Add Adjustment Layer",
+    description: "Add a non-destructive adjustment layer above the active layer. It changes how all layers below look without touching their pixels and can be hidden or deleted later. Use apply_adjustment to change one layer's pixels instead.",
+    inputSchema: {
+      type: z.enum(["brightness", "hue_sat", "levels"]).describe("'brightness' uses brightness/contrast, 'hue_sat' uses hue/saturation/lightness, 'levels' uses inputMin/inputMax/gamma"),
+      brightness: z.number().min(-150).max(150).optional().describe("brightness: -150..150"),
+      contrast: z.number().min(-50).max(100).optional().describe("brightness: -50..100"),
+      hue: z.number().min(-180).max(180).optional().describe("hue_sat: hue shift in degrees"),
+      saturation: z.number().min(-100).max(100).optional().describe("hue_sat: -100..100"),
+      lightness: z.number().min(-100).max(100).optional().describe("hue_sat: -100..100"),
+      inputMin: z.number().int().min(0).max(253).optional().describe("levels: input black point 0..253"),
+      inputMax: z.number().int().min(2).max(255).optional().describe("levels: input white point 2..255"),
+      gamma: z.number().min(0.1).max(9.99).optional().describe("levels: midtone gamma, 1 = unchanged"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, async (params) => {
+    bridge.sendActivity({ type: "activity", id: "", tool: "add_adjustment_layer", summary: `Add ${params.type} adjustment layer` });
+    const result = await bridge.executeScript(buildAddAdjustmentLayer(params));
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to add adjustment layer" }] };
+    return { content: [{ type: "text" as const, text: `${params.type} adjustment layer added` }] };
+  });
+
+  // photopea_merge_layers
+  server.registerTool("photopea_merge_layers", {
+    title: "Merge Layers",
+    description: "Merge layers: 'down' merges the active layer into the one below, 'flatten' merges everything into a single background layer. Layer styles and masks get baked into pixels.",
+    inputSchema: {
+      mode: z.enum(["down", "flatten"]).describe("Which layers to merge"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  }, async (params) => {
+    bridge.sendActivity({ type: "activity", id: "", tool: "merge_layers", summary: `Merge layers: ${params.mode}` });
+    const result = await bridge.executeScript(buildMergeLayers(params.mode));
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to merge layers" }] };
+    return { content: [{ type: "text" as const, text: `Layers merged (${params.mode})` }] };
+  });
+
+  // photopea_set_layer_style
+  server.registerTool("photopea_set_layer_style", {
+    title: "Set Layer Style",
+    description: "Set a layer's effects: drop shadow, outer glow and/or stroke. Replaces the layer's existing effects; pass none to clear them. Effects stay editable and follow the layer's shape, which suits text and logos.",
+    inputSchema: {
+      target: layerTarget.optional(),
+      dropShadow: z.object({
+        color: hexColor,
+        opacity: percent.optional().describe("0..100, default 75"),
+        angle: z.number().optional().describe("Light angle in degrees, default 135 (shadow falls bottom-right)"),
+        distance: z.number().min(0).optional().describe("Offset in pixels, default 10"),
+        size: z.number().min(0).optional().describe("Blur in pixels, default 10"),
+      }).optional(),
+      outerGlow: z.object({
+        color: hexColor,
+        opacity: percent.optional().describe("0..100, default 75"),
+        size: z.number().min(0).optional().describe("Glow spread in pixels, default 20"),
+      }).optional(),
+      stroke: z.object({
+        color: hexColor,
+        size: z.number().min(1).optional().describe("Width in pixels, default 3"),
+        position: z.enum(["outside", "inside", "center"]).optional().describe("default outside"),
+        opacity: percent.optional().describe("0..100, default 100"),
+      }).optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async (params) => {
+    const effects = ["dropShadow", "outerGlow", "stroke"].filter((k) => params[k as keyof typeof params]);
+    bridge.sendActivity({ type: "activity", id: "", tool: "set_layer_style", summary: effects.length ? `Layer style: ${effects.join(", ")}` : "Clear layer style" });
+    const result = await bridge.executeScript(buildSetLayerStyle(params));
+    if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Failed to set layer style" }] };
+    return { content: [{ type: "text" as const, text: effects.length ? `Layer style set: ${effects.join(", ")}` : "Layer style cleared" }] };
   });
 }

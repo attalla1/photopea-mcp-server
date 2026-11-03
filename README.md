@@ -130,7 +130,7 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 
 ## Available Tools
 
-### Document (5 tools)
+### Document (9 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -139,8 +139,12 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 | `photopea_get_document_info` | Get active document info (name, dimensions, resolution, color mode) |
 | `photopea_resize_document` | Resize the active document (resamples content to fit) |
 | `photopea_close_document` | Close the active document |
+| `photopea_crop` | Crop to a rectangle |
+| `photopea_resize_canvas` | Change the canvas size without scaling content, with an anchor |
+| `photopea_trim` | Trim transparent or solid-color borders |
+| `photopea_rotate_canvas` | Rotate and/or flip the whole document |
 
-### Layer (11 tools)
+### Layer (16 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -155,6 +159,11 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 | `photopea_group_layers` | Group named layers into a layer group |
 | `photopea_ungroup_layers` | Ungroup a layer group |
 | `photopea_get_layers` | Get the full layer tree as JSON |
+| `photopea_layer_mask` | Add a reveal-all, hide-all or from-selection mask, or delete it |
+| `photopea_set_clipping_mask` | Clip a layer to the layer below it |
+| `photopea_add_adjustment_layer` | Non-destructive brightness/contrast, hue/saturation or levels layer |
+| `photopea_merge_layers` | Merge down or flatten |
+| `photopea_set_layer_style` | Drop shadow, outer glow and stroke effects |
 
 ### Text & Shape (3 tools)
 
@@ -164,11 +173,12 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 | `photopea_edit_text` | Edit content or style of an existing text layer |
 | `photopea_add_shape` | Add a shape (rectangle or ellipse) |
 
-### Image & Effects (9 tools)
+### Image & Effects (10 tools)
 
 | Tool | Description |
 |------|-------------|
 | `photopea_place_image` | Place an image from URL or local path |
+| `photopea_fill_placeholder` | Fit an image into a template's placeholder layer and clip it to its shape |
 | `photopea_apply_adjustment` | Apply brightness/contrast, hue/saturation, levels, or curves |
 | `photopea_apply_filter` | Apply gaussian blur, sharpen, unsharp mask, noise, or motion blur |
 | `photopea_transform_layer` | Scale, rotate, or flip a layer |
@@ -178,11 +188,13 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 | `photopea_fill_selection` | Fill the current selection with a color |
 | `photopea_clear_selection` | Deselect the current selection |
 
-### Export & Utility (6 tools)
+### Export & Utility (8 tools)
 
 | Tool | Description |
 |------|-------------|
+| `photopea_get_preview` | Return a downscaled PNG of the document so the agent can see its work |
 | `photopea_export_image` | Export to PNG, JPG, WebP, PSD, or SVG |
+| `photopea_batch_process` | Open many images, run a script on each, export them to a folder |
 | `photopea_load_font` | Load a custom font from a URL (TTF, OTF, WOFF2) |
 | `photopea_list_fonts` | List available fonts, with optional search filter |
 | `photopea_run_script` | Execute arbitrary Photopea JavaScript |
@@ -201,6 +213,12 @@ Once installed, ask your agent to perform image editing tasks:
 
 **Composite images:**
 > "Create a 1200x630 document, place ~/assets/background.png as the base layer, then place ~/assets/logo.png and move it to the top-right corner"
+
+**Fill a template:**
+> "Open ~/templates/post.psd, put ~/photos/product.jpg into the 'Photo' layer, change the 'Title' text to 'Summer Sale', check the preview, and export as PNG"
+
+**Batch convert:**
+> "Resize every JPG in ~/photos to 1200px wide and save them as WebP in ~/photos/web"
 
 **Batch adjustments:**
 > "Open ~/photos/sunset.jpg, apply hue/saturation with +20 saturation, apply an unsharp mask with amount 50 and radius 2, then export as PNG"
@@ -227,7 +245,7 @@ npm run build
 
 The server has four main components:
 
-**MCP Server** (`src/server.ts`) -- Registers all 34 tools with the MCP SDK and connects via stdio transport.
+**MCP Server** (`src/server.ts`) -- Registers all 46 tools with the MCP SDK and connects via stdio transport.
 
 **WebSocket Bridge** (`src/bridge/websocket-server.ts`) -- Manages the connection between the MCP server and the browser. Queues script execution requests and handles responses with timeouts.
 
@@ -244,11 +262,11 @@ src/
     script-builder.ts   # Photopea JS code generators
     types.ts            # Protocol message types
   tools/
-    document.ts         # Document operations (5 tools)
-    layer.ts            # Layer operations (11 tools)
+    document.ts         # Document and canvas operations (9 tools)
+    layer.ts            # Layers, masks, adjustment layers, styles (16 tools)
     text.ts             # Text and shape operations (3 tools)
-    image.ts            # Image, adjustment, filter operations (9 tools)
-    export.ts           # Export and utility operations (6 tools)
+    image.ts            # Image, adjustment, filter, template operations (10 tools)
+    export.ts           # Preview, export, batch and utility operations (8 tools)
   utils/
     file-io.ts          # Local file read/write, URL fetching
     platform.ts         # Port discovery, browser launch
