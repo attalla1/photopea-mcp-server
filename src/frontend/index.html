@@ -570,18 +570,11 @@
         pendingId = null;
 
         if (fileBuffer !== null) {
-          // File export result
-          var arr  = new Uint8Array(fileBuffer);
-          var b64  = uint8ArrayToBase64(arr);
-          var mime = detectMime(arr);
-          sendToWS({
-            type:     'file',
-            id:       id,
-            success:  true,
-            data:     b64,
-            mimeType: mime,
-            error:    null
-          });
+          // Binary frame: 36-char request id, then the raw file (no base64, so large PSDs fit)
+          var out = new Uint8Array(36 + fileBuffer.byteLength);
+          for (var i = 0; i < 36; i++) out[i] = id.charCodeAt(i);
+          out.set(new Uint8Array(fileBuffer), 36);
+          if (ws && ws.readyState === WebSocket.OPEN) ws.send(out);
         } else {
           // Script result (echoToOE strings joined)
           var resultData = echoBuffer.length > 0 ? echoBuffer.join('\n') : null;
@@ -599,36 +592,6 @@
 
         echoBuffer = [];
         fileBuffer = null;
-      }
-
-      // -----------------------------------------------------------------------
-      // Utilities
-      // -----------------------------------------------------------------------
-
-      function uint8ArrayToBase64(bytes) {
-        var binary = '';
-        var len    = bytes.byteLength;
-        for (var i = 0; i < len; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binary);
-      }
-
-      function detectMime(bytes) {
-        // Check magic bytes for common image formats
-        if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
-          return 'image/png';
-        }
-        if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
-          return 'image/jpeg';
-        }
-        if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
-          return 'image/webp';
-        }
-        if (bytes[0] === 0x38 && bytes[1] === 0x42 && bytes[2] === 0x50 && bytes[3] === 0x53) {
-          return 'image/vnd.adobe.photoshop';
-        }
-        return 'application/octet-stream';
       }
 
       // -----------------------------------------------------------------------

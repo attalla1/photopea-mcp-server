@@ -327,8 +327,9 @@ describe("script-builder: export operations", () => {
   });
 
   it("buildExportImage jpg with quality", () => {
-    const script = buildExportImage({ format: "jpg", quality: 80, outputPath: "/tmp/out.jpg" });
-    expect(script).toContain("jpg:80");
+    // Photopea takes quality as 0-1; the tool takes 1-100
+    expect(buildExportImage({ format: "jpg", quality: 80, outputPath: "/tmp/out.jpg" })).toContain("'jpg:0.8'");
+    expect(buildExportImage({ format: "webp", quality: 5, outputPath: "/tmp/out.webp" })).toContain("'webp:0.05'");
   });
 
 });

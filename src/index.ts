@@ -49,6 +49,8 @@ async function main(): Promise<void> {
   const mcpServer = createServer(bridge);
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);
+  // The bridge's HTTP server would keep the process alive after the client is gone
+  process.stdin.on("end", () => process.exit(0));
   console.error("Photopea MCP server ready.");
 }
 

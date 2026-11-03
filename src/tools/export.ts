@@ -19,7 +19,7 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
     description: "Export the active document to a file and save it to the local filesystem. The entire document is flattened and exported in the chosen format. Use create_document or open_file to set up the document before exporting.",
     inputSchema: {
       format: z.enum(["png", "jpg", "webp", "psd", "svg"]).describe("Output format: 'png' for lossless, 'jpg' for compressed photos, 'webp' for web, 'psd' for Photoshop, 'svg' for vector"),
-      quality: z.number().min(1).max(100).optional().describe("Compression quality for JPG format only (1 = smallest file, 100 = best quality). Ignored for other formats."),
+      quality: z.number().min(1).max(100).optional().describe("Compression quality for JPG and WebP (1 = smallest file, 100 = best quality). Ignored for other formats."),
       outputPath: z.string().describe("Absolute local file path where the exported file will be saved (e.g. /Users/me/output.png)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -94,8 +94,9 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
     bridge.sendActivity({ type: "activity", id: "", tool: "run_script", summary: "Run custom script" });
     const result = await bridge.executeScript(script);
     if (!result.success) return { isError: true, content: [{ type: "text" as const, text: result.error || "Script execution failed" }] };
-    const scriptResult = result as import("../bridge/types.js").BridgeResult;
-    return { content: [{ type: "text" as const, text: scriptResult.data ?? "Script executed successfully" }] };
+    // A script that calls saveToOE gets a file back, which isn't valid text content
+    if (Buffer.isBuffer(result.data)) return { content: [{ type: "text" as const, text: `Script produced a ${result.data.length}-byte file. Use photopea_export_image to save files.` }] };
+    return { content: [{ type: "text" as const, text: result.data ?? "Script executed successfully" }] };
   });
 
   // 34. photopea_undo
