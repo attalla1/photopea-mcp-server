@@ -35,21 +35,28 @@ export class PhotopeaBridge {
     // Create bare HTTP server; route handling is added externally via the entry point
     this.httpServer = createServer();
 
-    // Create WSS attached directly to the HTTP server (not noServer mode)
-    this.wss = new WebSocketServer({ server: this.httpServer });
+    // Only our own page may connect; any other website could otherwise take over the bridge
+    const allowedOrigins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
+    this.wss = new WebSocketServer({
+      server: this.httpServer,
+      verifyClient: ({ origin }: { origin: string }) => allowedOrigins.includes(origin),
+    });
 
     this.wss.on("connection", (ws: WebSocket) => {
-      // Accept the newest connection; silently release the old one
+      // Accept the newest connection; the new tab reports ready once its Photopea has loaded
       const prev = this.client;
       this.client = ws;
+      this.ready = false;
 
       if (prev && prev !== ws && prev.readyState === WebSocket.OPEN) {
-        // Silently terminate without triggering our close handler logic
-        prev.removeAllListeners();
-        prev.terminate();
+        // 4001 tells the old tab not to reconnect. Keep its listeners: ws needs them to drop it from wss.clients.
+        prev.close(4001, "Replaced by a newer Photopea tab");
+        // Requests sent to the old tab will never be answered; fail them now instead of at timeout
+        this.rejectAllPending(new Error("Photopea tab was replaced by a newer one. Retry the call."));
       }
 
       ws.on("message", (raw) => {
+        if (this.client !== ws) return; // replaced tab
         try {
           const msg = JSON.parse(raw.toString());
           this.handleClientMessage(msg);
@@ -63,6 +70,7 @@ export class PhotopeaBridge {
         if (this.client === ws) {
           this.client = null;
           this.ready = false;
+          this.browserLaunched = false; // tab is gone: the next tool call reopens it
           this.rejectAllPending(new Error("Photopea client disconnected"));
         }
       });

@@ -1,21 +1,31 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { WebSocket } from "ws";
 import { PhotopeaBridge } from "../../src/bridge/websocket-server.js";
+import { launchBrowser } from "../../src/utils/platform.js";
+
+vi.mock("../../src/utils/platform.js", () => ({ launchBrowser: vi.fn(() => Promise.resolve()) }));
 
 describe("PhotopeaBridge", () => {
   let bridge: PhotopeaBridge;
   let clientWs: WebSocket;
   const TEST_PORT = 14117;
 
+  const connect = (origin = `http://127.0.0.1:${TEST_PORT}`) =>
+    new Promise<WebSocket>((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}`, { origin });
+      ws.on("open", () => resolve(ws));
+      ws.on("error", reject);
+    });
+  const sendReady = (ws: WebSocket) => ws.send(JSON.stringify({ type: "status", status: "ready" }));
+  const tick = () => new Promise((r) => setTimeout(r, 50));
+
   beforeEach(async () => {
+    vi.mocked(launchBrowser).mockClear();
     bridge = new PhotopeaBridge(TEST_PORT);
     await bridge.start();
-    await new Promise<void>((resolve) => {
-      clientWs = new WebSocket(`ws://127.0.0.1:${TEST_PORT}`);
-      clientWs.on("open", () => resolve());
-    });
-    clientWs.send(JSON.stringify({ type: "status", status: "ready" }));
-    await new Promise((r) => setTimeout(r, 50));
+    clientWs = await connect();
+    sendReady(clientWs);
+    await tick();
   });
 
   afterEach(async () => {
@@ -135,5 +145,38 @@ describe("PhotopeaBridge", () => {
 
   it("reports ready state", () => {
     expect(bridge.isReady()).toBe(true);
+  });
+
+  it("rejects connections from other origins", async () => {
+    await expect(connect("https://evil.example")).rejects.toThrow(/401/);
+    await expect(connect()).resolves.toBeInstanceOf(WebSocket);
+  });
+
+  it("closes the replaced tab with code 4001, fails its in-flight call, and waits for the new tab", async () => {
+    const closed = new Promise<number>((r) => clientWs.on("close", (code) => r(code)));
+    const inFlight = bridge.executeScript("neverAnswered();");
+    await tick();
+    const newTab = await connect();
+    expect(await closed).toBe(4001);
+    expect((await inFlight).error).toMatch(/replaced/);
+    expect(bridge.isReady()).toBe(false);
+    sendReady(newTab);
+    await tick();
+    expect(bridge.isReady()).toBe(true);
+    newTab.close();
+  });
+
+  it("relaunches the browser on the next call each time the tab is closed", async () => {
+    let tab = clientWs;
+    for (const launches of [1, 2]) {
+      tab.close();
+      await tick();
+      const ready = bridge.waitForReady();
+      expect(launchBrowser).toHaveBeenCalledTimes(launches);
+      tab = await connect();
+      sendReady(tab);
+      await ready;
+    }
+    tab.close();
   });
 });
