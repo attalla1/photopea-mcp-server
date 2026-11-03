@@ -105,9 +105,9 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
   // photopea_load_font
   server.registerTool("photopea_load_font", {
     title: "Load Font",
-    description: "Load a custom font from a URL (TTF, OTF, or WOFF2) into Photopea. The font becomes available for add_text and edit_text. Use list_fonts to find the PostScript name after loading.",
+    description: "Load a custom font from a URL (TTF or OTF; Photopea cannot open WOFF2) into Photopea. The font becomes available for add_text and edit_text. Use list_fonts to find the PostScript name after loading.",
     inputSchema: {
-      url: z.string().describe("URL to a font file (.ttf, .otf, or .woff2)"),
+      url: z.string().describe("URL to a .ttf or .otf font file"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   }, async (params) => {

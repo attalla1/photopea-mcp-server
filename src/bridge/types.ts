@@ -247,6 +247,7 @@ export interface ResizeCanvasParams {
   width: number;
   height: number;
   anchor: (typeof ANCHORS)[number];
+  fillColor?: string;
 }
 
 export const ANCHORS = ["top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"] as const;
@@ -283,7 +284,7 @@ export interface LayerStyleParams {
 export interface FitToLayerParams {
   placeholder: string | number;
   fit: "cover" | "contain";
-  clip: boolean;
+  mask: boolean;
 }
 
 // --- Layer Info Types (returned by get_layers) ---

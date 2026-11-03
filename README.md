@@ -140,7 +140,7 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 | `photopea_resize_document` | Resize the active document (resamples content to fit) |
 | `photopea_close_document` | Close the active document |
 | `photopea_crop` | Crop to a rectangle |
-| `photopea_resize_canvas` | Change the canvas size without scaling content, with an anchor |
+| `photopea_resize_canvas` | Change the canvas size without scaling content, with an anchor and optional fill color |
 | `photopea_trim` | Trim transparent or solid-color borders |
 | `photopea_rotate_canvas` | Rotate and/or flip the whole document |
 
@@ -178,7 +178,7 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 | Tool | Description |
 |------|-------------|
 | `photopea_place_image` | Place an image from URL or local path |
-| `photopea_fill_placeholder` | Fit an image into a template's placeholder layer and clip it to its shape |
+| `photopea_fill_placeholder` | Fit an image into a template's placeholder layer and mask it to its shape |
 | `photopea_apply_adjustment` | Apply brightness/contrast, hue/saturation, levels, or curves |
 | `photopea_apply_filter` | Apply gaussian blur, sharpen, unsharp mask, noise, or motion blur |
 | `photopea_transform_layer` | Scale, rotate, or flip a layer |
@@ -195,7 +195,7 @@ Add to Windsurf MCP settings (`~/.windsurf/mcp.json`):
 | `photopea_get_preview` | Return a downscaled PNG of the document so the agent can see its work |
 | `photopea_export_image` | Export to PNG, JPG, WebP, PSD, or SVG |
 | `photopea_batch_process` | Open many images, run a script on each, export them to a folder |
-| `photopea_load_font` | Load a custom font from a URL (TTF, OTF, WOFF2) |
+| `photopea_load_font` | Load a custom font from a URL (TTF, OTF) |
 | `photopea_list_fonts` | List available fonts, with optional search filter |
 | `photopea_run_script` | Execute arbitrary Photopea JavaScript |
 | `photopea_undo` | Undo one or more actions |
