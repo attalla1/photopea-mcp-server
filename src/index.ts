@@ -29,7 +29,12 @@ async function main(): Promise<void> {
 
   httpServer.on("request", (req, res) => {
     if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {
-      res.writeHead(200, { "Content-Type": "text/html" });
+      res.writeHead(200, {
+        "Content-Type": "text/html",
+        // Other sites must not frame or script this page: its origin passes the WebSocket check
+        "Content-Security-Policy": "frame-ancestors 'none'",
+        "Cross-Origin-Opener-Policy": "same-origin",
+      });
       res.end(frontendHtml);
       return;
     }

@@ -326,7 +326,6 @@
         } else {
           dot.classList.remove('connected');
           statusText.textContent = 'Disconnected';
-          photopeaReady = false;
         }
       }
 
@@ -415,8 +414,13 @@
           }
         };
 
-        ws.onclose = function () {
+        ws.onclose = function (event) {
           setConnected(false);
+          // 4001 = the server switched to a newer tab; reconnecting would steal the session back
+          if (event.code === 4001) {
+            statusText.textContent = 'Session moved to another tab. You can close this one.';
+            return;
+          }
           scheduleReconnect();
         };
 

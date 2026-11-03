@@ -8,6 +8,7 @@ import {
   buildRunScript,
   buildUndo,
   buildRedo,
+  escapeString,
 } from "../bridge/script-builder.js";
 import { writeLocalFile } from "../utils/file-io.js";
 
@@ -50,7 +51,7 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
     // Loading a font via app.open() opens it as a "document" -- we need to track the current doc and switch back
     const script = [
       `var _docName = app.activeDocument ? app.activeDocument.name : null;`,
-      `app.open('${params.url.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}');`,
+      `app.open('${escapeString(params.url)}');`,
       `if (_docName) { app.activeDocument = app.documents.getByName(_docName); }`,
       `app.echoToOE('ok');`,
     ].join("\n");
@@ -71,7 +72,7 @@ export function registerExportTools(server: McpServer, bridge: PhotopeaBridge): 
   }, async (params) => {
     const search = params.search?.toLowerCase();
     const script = search
-      ? `var r=[];for(var i=0;i<app.fonts.length;i++){var n=app.fonts[i].postScriptName;if(n.toLowerCase().indexOf('${search}')>=0)r.push(n);}app.echoToOE(JSON.stringify(r));`
+      ? `var r=[];for(var i=0;i<app.fonts.length;i++){var n=app.fonts[i].postScriptName;if(n.toLowerCase().indexOf('${escapeString(search)}')>=0)r.push(n);}app.echoToOE(JSON.stringify(r));`
       : `var r=[];for(var i=0;i<app.fonts.length;i++){r.push(app.fonts[i].postScriptName);}app.echoToOE(JSON.stringify(r));`;
     bridge.sendActivity({ type: "activity", id: "", tool: "list_fonts", summary: `List fonts${search ? `: ${search}` : ""}` });
     const result = await bridge.executeScript(script);
