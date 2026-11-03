@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://glama.ai/mcp/servers/attalla1/photopea-mcp-server"><img src="https://glama.ai/mcp/servers/attalla1/photopea-mcp-server/badges/score.svg" alt="Glama score"></a>
+  <a href="https://github.com/attalla1/photopea-mcp-server/actions/workflows/ci.yml"><img src="https://github.com/attalla1/photopea-mcp-server/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://www.npmjs.com/package/photopea-mcp-server"><img src="https://img.shields.io/npm/v/photopea-mcp-server.svg" alt="npm version"></a>
   <a href="https://github.com/attalla1/photopea-mcp-server/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="license"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/photopea-mcp-server.svg" alt="node"></a>
@@ -40,7 +41,7 @@ graph LR
 
 Your agent sends editing commands through the MCP protocol. The server translates these into Photopea JavaScript API calls and executes them via a WebSocket bridge to the browser.
 
-**Note:** A browser window will open automatically on the first tool call. This is expected -- Photopea runs entirely in the browser and the server needs it to perform image editing operations.
+**Note:** A browser window will open automatically on the first tool call. This is expected -- Photopea runs entirely in the browser and the server needs it to perform image editing operations. If you close the tab, the next tool call opens it again.
 
 ## Quick Start
 
@@ -257,15 +258,16 @@ src/
 
 ## Security
 
-- The MCP server binds to `127.0.0.1` (localhost only) and is not accessible from the network.
-- The `photopea_run_script` tool executes arbitrary JavaScript inside Photopea's sandboxed iframe. It is marked as destructive and requires user approval in MCP clients that support tool annotations.
+- The MCP server talks to your agent over stdio. Its browser bridge binds to `127.0.0.1` (localhost only) and is not accessible from the network.
+- The bridge only accepts WebSocket connections from its own page, and that page cannot be framed or scripted by other sites. A website open in the same browser cannot take over the session or read your files.
+- The `photopea_run_script` tool executes arbitrary JavaScript inside Photopea's sandboxed iframe. It is marked as destructive, so MCP clients that honor tool annotations can ask for approval before running it.
 - File operations (`open_file`, `export_image`, `place_image`) read and write files with the same permissions as the user running the server.
 
 ## Known Limitations
 
 - Heavy scripts (e.g., gradients with many color steps) may cause the Photopea browser UI to become unresponsive. The operations still complete successfully in the background and exports will work as expected.
 - Refreshing the browser page will discard all unsaved work. Export your documents before refreshing.
-- Only one browser tab should be open at a time. Multiple tabs will conflict over the WebSocket connection.
+- Only one bridge tab is active at a time. If you open another, the newest tab takes over and the older one shows "Session moved to another tab". Documents open in the older tab are not carried over.
 - The `reorder_layer` tool may cause the Photopea UI to become unresponsive. To avoid this, create layers in the desired order rather than reordering after creation.
 
 ## Requirements
